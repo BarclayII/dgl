@@ -8,12 +8,41 @@
 
 #include <vector>
 #include <string>
+#include <cstdlib>
+#include <ctime>
 #include "graph_interface.h"
 #include "nodeflow.h"
+
+#ifdef _MSC_VER
+// rand in MS compiler works well in multi-threading.
+static inline int rand_r(unsigned *seed) {
+  return rand();
+}
+
+static inline unsigned int randseed() {
+  unsigned int seed = time(nullptr);
+  srand(seed);  // need to set seed manually since there's no rand_r
+  return seed;
+}
+#define _CRT_RAND_S
+#else
+static inline unsigned int randseed() {
+  return time(nullptr);
+}
+#endif
 
 namespace dgl {
 
 class ImmutableGraph;
+
+struct RandomWalkTraces {
+  /*! \brief number of traces generated for each seed */
+  IdArray trace_counts;
+  /*! \brief length of each trace, concatenated */
+  IdArray trace_lengths;
+  /*! \brief the vertices, concatenated */
+  IdArray vertices;
+};
 
 class SamplerOp {
  public:
@@ -61,6 +90,54 @@ class SamplerOp {
                             IdArray seeds,
                             int num_traces,
                             int num_hops);
+
+  /*!
+   * \brief Batch-generate random walk traces with restart
+   *
+   * Stop generating traces if max_frequrent_visited_nodes nodes are visited more than
+   * max_visit_counts times.
+   *
+   * \param seeds The array of starting vertex IDs
+   * \param restart_prob The restart probability
+   * \param max_nodes_per_seed Stop generating traces if this many nodes are visited for each seed
+   * \param num_hops The number of hops for each trace
+   * \return a flat ID array with shape (num_seeds, num_traces, num_hops + 1)
+   */
+  static RandomWalkTraces RandomWalkWithRestart(
+      const GraphInterface *gptr,
+      IdArray seeds,
+      double restart_prob,
+      uint64_t max_nodes_per_seed,
+      uint64_t max_visit_counts,
+      uint64_t max_frequent_visited_nodes);
+
+  /*
+   * \note Doesn't verify whether the graph is indeed a bipartite graph
+   */
+  static RandomWalkTraces BipartiteSingleSidedRandomWalkWithRestart(
+      const GraphInterface *gptr,
+      IdArray seeds,
+      double restart_prob,
+      uint64_t max_nodes_per_seed,
+      uint64_t max_visit_counts,
+      uint64_t max_frequent_visited_nodes);
+
+ private:
+  static IdArray GenericRandomWalk(
+      const GraphInterface *gptr,
+      IdArray seeds,
+      int num_traces,
+      int num_hops,
+      bool (*walker)(const GraphInterface *, unsigned int *, dgl_id_t, dgl_id_t *));
+
+  static RandomWalkTraces GenericRandomWalkWithRestart(
+      const GraphInterface *gptr,
+      IdArray seeds,
+      double restart_prob,
+      uint64_t max_nodes_per_seed,
+      uint64_t max_visit_counts,
+      uint64_t max_frequent_visited_nodes,
+      bool (*walker)(const GraphInterface *, unsigned int *, dgl_id_t, dgl_id_t *));
 };
 
 }  // namespace dgl
