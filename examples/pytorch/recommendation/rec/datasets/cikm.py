@@ -39,12 +39,12 @@ def merge_users(session_user_mapping):
             union(parent, reverse_mapping[user_set[i]], reverse_mapping[user_set[i + 1]])
 
     user_mapping = {u: users[find(parent, reverse_mapping[u])] for u in users}
+    user_mapping[np.nan] = np.nan
     return user_mapping
 
 
 def fill_users(user_mapping, table):
     table = table.fillna({'userId': table.groupby('sessionId')['userId'].transform('first')})
-    table = table.dropna(subset=['userId'], axis=0)
     table['userId'] = table['userId'].map(user_mapping)
     return table
 
@@ -86,15 +86,17 @@ class CIKM(UserProductDataset):
         train_purchases = fill_users(user_mapping, train_purchases)
         train_item_views = fill_users(user_mapping, train_item_views)
 
-        ratings = pd.concat([
-            train_queries_with_clicks[['userId', 'itemId', 'searchstring.tokens', 'categoryId']],
-            train_item_views[['userId', 'itemId']],
-            train_purchases[['userId', 'itemId']],
+
+        ratings_with_session = pd.concat([
+            train_queries_with_clicks[['sessionId', 'userId', 'itemId', 'searchstring.tokens', 'categoryId']],
+            train_item_views[['sessionId', 'userId', 'itemId']],
+            train_purchases[['sessionId', 'userId', 'itemId']],
             ]).drop_duplicates()
-        ratings = (
-                ratings
+        ratings_with_session = (
+                ratings_with_session
                 .fillna({'categoryId': 0, 'searchstring.tokens': ''})
                 .astype({'categoryId': 'int64'}))
+        ratings = ratings_with_session.drop('sessionId', axis=1).drop_duplicates()
 
         self.users = pd.DataFrame({'id': ratings['userId'].unique()}).set_index('id')
         self.products = pd.DataFrame({'itemId': ratings['itemId'].unique()}).set_index('itemId')
@@ -111,6 +113,11 @@ class CIKM(UserProductDataset):
         get_token_list(ratings, 'searchstring.tokens', 'tokens')
 
         ratings = ratings.rename({'userId': 'user_id', 'itemId': 'product_id'}, axis=1)
+        ratings_with_session = ratings_with_session.rename({'userId': 'user_id', 'itemId': 'product_id'}, axis=1)
+        self.ratings_with_session = ratings_with_session
+        self.ratings_complete = ratings
+
+        ratings = ratings.dropna(subset=['user_id'])
         product_count = ratings['product_id'].value_counts()
         user_count = ratings['user_id'].value_counts()
         product_count.name = 'product_count'
@@ -122,6 +129,10 @@ class CIKM(UserProductDataset):
 
         self.build_graph()
         self.test_queries = test_queries
+        self.train_queries_with_clicks = train_queries_with_clicks
+        self.train_purchases = train_purchases
+        self.train_item_views = train_item_views
+        self.anonymous_ratings = self.ratings_with_session[self.ratings_with_session['user_id'].isnull()]
 
     def build_graph(self):
         import torch
