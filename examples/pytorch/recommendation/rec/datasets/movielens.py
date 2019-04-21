@@ -97,7 +97,7 @@ class MovieLens(UserProductDataset):
         self.user_ids_invmap = user_ids_invmap
         self.product_ids_invmap = product_ids_invmap
 
-        g = dgl.DGLGraph()
+        g = dgl.DGLGraph(multigraph=True)
         g.add_nodes(len(user_ids) + len(product_ids))
 
         # user features

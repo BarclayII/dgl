@@ -23,11 +23,14 @@ class Reddit(UserProductDataset):
         self.products = pd.DataFrame({'id': np.unique(subm)}).set_index('id')
         ratings = pd.DataFrame({'user_id': users, 'product_id': subm})
         product_count = ratings['product_id'].value_counts()
+        user_count = ratings['user_id'].value_counts()
         product_count.name = 'product_count'
-        ratings = ratings.join(product_count, on='product_id')
+        user_count.name = 'user_count'
+        ratings = ratings.join(product_count, on='product_id').join(user_count, on='user_id')
         self.ratings = ratings
 
         print('data split')
+        self._count = 0
         self.ratings = self.data_split(self.ratings)
 
         print('build graph')
@@ -39,15 +42,17 @@ class Reddit(UserProductDataset):
         import dask
         dask.config.set(scheduler='processes')
         import dask.dataframe as dd
+        from dask.diagnostics import ProgressBar
         print(ratings.shape)
         ratings = dd.from_pandas(ratings, chunksize=524288)
         ratings = ratings.groupby('user_id').apply(
-                partial(self.split_user, filter_counts=True))
+                partial(self.split_user_product, filter_counts=2))
         ratings['train'] = ratings['prob'] <= 0.95
         ratings['valid'] = (ratings['prob'] > 0.95) & (ratings['prob'] <= 0.98)
         ratings['test'] = ratings['prob'] > 0.98
-        ratings = ratings.drop(['prob'], axis=1)
-        return ratings.compute().reset_index(drop=True)
+        with ProgressBar():
+            ratings = ratings.compute()
+        return ratings.reset_index(drop=True)
 
     def build_graph(self):
         import torch
@@ -60,7 +65,7 @@ class Reddit(UserProductDataset):
         self.user_ids_invmap = user_ids_invmap
         self.product_ids_invmap = product_ids_invmap
 
-        g = dgl.DGLGraph()
+        g = dgl.DGLGraph(multigraph=True)
         g.add_nodes(len(user_ids) + len(product_ids))
 
         features = np.load(self.path + '.features')
@@ -86,3 +91,31 @@ class Reddit(UserProductDataset):
                 rating_user_vertices,
                 data={'inv': torch.ones(self.ratings.shape[0], dtype=torch.uint8)})
         self.g = g
+
+    def generate_mask(self):
+        ratings = self.ratings
+        self._count = 0
+        ratings_grouped = ratings.groupby('user_id', group_keys=False).apply(
+                partial(self.split_user_product, filter_counts=2))
+        print()
+        prior_prob = ratings_grouped['prob'].values
+        train_mask = (prior_prob >= 0) & (prior_prob < 0.2)
+        prior_mask = ~train_mask
+        train_mask &= ratings_grouped['train'].values
+        prior_mask &= ratings_grouped['train'].values
+        return iter([(prior_mask, train_mask)])
+
+    def split_user_product(self, df, filter_counts=0):
+        df_new = df.copy()
+        df_new['prob'] = -1
+
+        df_new_sub = (
+                (df_new['product_count'] >= filter_counts) &
+                (df_new['user_count'] >= filter_counts)
+                ).nonzero()[0]
+        prob = np.linspace(0, 1, df_new_sub.shape[0], endpoint=False)
+        np.random.shuffle(prob)
+        df_new['prob'].iloc[df_new_sub] = prob
+        self._count += 1
+        print(self._count, end='\r')
+        return df_new

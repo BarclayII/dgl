@@ -16,7 +16,10 @@ def mix_embeddings(h, ndata, emb, proj):
     e = []
     for key in emb.keys():
         value = ndata[key]
-        e.append(emb[key](cuda(value)))
+        result = emb[key](cuda(value))
+        if result.dim() == 3:
+            result = result.mean(1)     # bag of words
+        e.append(result)
     for key in proj.keys():
         value = ndata[key]
         e.append(proj[key](cuda(value)))
@@ -69,7 +72,7 @@ class PinSageConv(nn.Module):
 
 
 class PinSage(nn.Module):
-    def __init__(self, feature_sizes, use_feature=False, G=None):
+    def __init__(self, feature_sizes, use_feature=False, G=None, emb={}, proj={}):
         super(PinSage, self).__init__()
         self.in_features = feature_sizes[0]
         self.out_features = feature_sizes[-1]
@@ -88,15 +91,15 @@ class PinSage(nn.Module):
 
             for key, scheme in G.node_attr_schemes().items():
                 if scheme.dtype == torch.int64:
-                    self.emb[key] = nn.Embedding(
+                    self.emb[key] = emb.get(key, nn.Embedding(
                             G.ndata[key].max().item() + 1,
                             self.in_features,
-                            padding_idx=0)
+                            padding_idx=0))
                 elif scheme.dtype == torch.float32:
-                    self.proj[key] = nn.Sequential(
+                    self.proj[key] = proj.get(key, nn.Sequential(
                             nn.Linear(scheme.shape[0], self.in_features),
                             nn.LeakyReLU(),
-                            )
+                            ))
 
     msg = [FN.src_mul_edge('h_q', 'ppr_weight', 'h_w'),
            FN.copy_edge('ppr_weight', 'w')]
@@ -124,4 +127,6 @@ class PinSage(nn.Module):
             nf.layers[i].data['h_q'] = result
             nf.block_compute(i, self.msg, self.red, self.convs[i])
 
-        return nf.layers[-1].data['h']
+        result = nf.layers[-1].data['h']
+        assert (result != result).sum() == 0
+        return result

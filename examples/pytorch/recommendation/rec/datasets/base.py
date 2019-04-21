@@ -64,11 +64,10 @@ class UserProductDataset(object):
         train_tensor = torch.from_numpy(train_mask.astype('uint8'))
         prior_tensor = torch.from_numpy(prior_mask.astype('uint8'))
         edge_data = {
-                'prior': prior_tensor,
-                'valid': valid_tensor,
-                'test': test_tensor,
-                'train': train_tensor,
+                'prior': torch.cat([prior_tensor, prior_tensor], 0),
+                'valid': torch.cat([valid_tensor, valid_tensor], 0),
+                'test': torch.cat([test_tensor, test_tensor], 0),
+                'train': torch.cat([train_tensor, train_tensor], 0),
                 }
 
-        self.g.edges[self.rating_user_vertices, self.rating_product_vertices].data.update(edge_data)
-        self.g.edges[self.rating_product_vertices, self.rating_user_vertices].data.update(edge_data)
+        self.g.edata.update(edge_data)

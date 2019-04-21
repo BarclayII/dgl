@@ -29,6 +29,7 @@ parser.add_argument('--hard-neg-prob', type=float, default=0,
 # Reddit dataset in particular is not finalized and is only for my (GQ's) internal purpose.
 parser.add_argument('--cache', type=str, default='/tmp/dataset.pkl',
                     help='File to cache the postprocessed dataset object')
+parser.add_argument('--dataset', type=str, default='movielens')
 args = parser.parse_args()
 
 print(args)
@@ -37,12 +38,18 @@ cache_file = args.cache
 if os.path.exists(cache_file):
     with open(cache_file, 'rb') as f:
         ml = pickle.load(f)
-else:
+elif args.dataset == 'movielens':
     from rec.datasets.movielens import MovieLens
     ml = MovieLens('./ml-1m')
     neighbors = ml.user_neighbors + ml.product_neighbors
     with open(cache_file, 'wb') as f:
-        pickle.dump(ml, f)
+        pickle.dump(ml, f, protocol=4)
+elif args.dataset == 'cikm':
+    from rec.datasets.cikm import CIKM
+    ml = CIKM('/efs/quagan/diginetica/dataset-train')
+    neighbors = []
+    with open(cache_file, 'wb') as f:
+        pickle.dump(ml, f, protocol=4)
 
 g = ml.g
 

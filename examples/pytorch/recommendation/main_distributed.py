@@ -8,6 +8,7 @@ from rec.model.pinsage import PinSage
 from rec.utils import cuda
 from dgl import DGLGraph
 from dgl.contrib.sampling import PPRBipartiteSingleSidedNeighborSampler
+from validation import *
 
 import argparse
 import pickle
@@ -29,6 +30,7 @@ parser.add_argument('--hard-neg-prob', type=float, default=0,
 # Reddit dataset in particular is not finalized and is only for my (GQ's) internal purpose.
 parser.add_argument('--cache', type=str, default='/tmp/dataset.pkl',
                     help='File to cache the postprocessed dataset object')
+parser.add_argument('--dataset', type=str, default='movielens')
 args = parser.parse_args()
 
 print(args)
@@ -37,6 +39,18 @@ cache_file = args.cache
 if os.path.exists(cache_file):
     with open(cache_file, 'rb') as f:
         ml = pickle.load(f)
+elif args.dataset == 'movielens':
+    from rec.datasets.movielens import MovieLens
+    ml = MovieLens('./ml-1m')
+    neighbors = ml.user_neighbors + ml.product_neighbors
+    with open(cache_file, 'wb') as f:
+        pickle.dump(ml, f, protocol=4)
+elif args.dataset == 'cikm':
+    from rec.datasets.cikm import CIKM
+    ml = CIKM('/efs/quagan/diginetica/dataset-train')
+    neighbors = []
+    with open(cache_file, 'wb') as f:
+        pickle.dump(ml, f, protocol=4)
 else:
     from rec.datasets.reddit import Reddit
     ml = Reddit('/efs/quagan/2018/subm-users.pkl')
@@ -45,7 +59,24 @@ else:
     with open(cache_file, 'wb') as f:
         pickle.dump(ml, f, protocol=4)
 
+_compute_validation = {
+        'movielens': compute_validation_ml,
+        'reddit': compute_validation_ml,
+        'cikm': compute_validation_cikm,
+        }
+compute_validation = _compute_validation[args.dataset]
+
 g = ml.g
+
+import pandas as pd
+u, v = g.all_edges('uv')
+u = pd.Series(u.numpy())
+v = pd.Series(v.numpy())
+ucount = u.value_counts()
+v1 = torch.LongTensor(v[(ucount[u] == 1).values].values)
+vcount = g.out_degrees(v1)
+v2 = v1[vcount == 1]
+print(len(v2))
 
 n_hidden = 100
 n_layers = args.layers
@@ -64,10 +95,19 @@ loss_func = {
         'bpr': lambda diff: (1 - torch.sigmoid(-diff)).mean(),
         }
 
+if args.dataset == 'cikm':
+    emb_tokens = nn.Embedding(
+            max(g.ndata['tokens'].max().item(), g.edata['tokens'].max().item()) + 1,
+            n_hidden)
+    emb = {'tokens': emb_tokens}
+else:
+    emb = {}
+
 model = cuda(PinSage(
     [n_hidden] * (n_layers + 1),
     use_feature=args.use_feature,
     G=g,
+    emb=emb,
     ))
 
 opt = getattr(torch.optim, args.opt)(
@@ -96,7 +136,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
         model.eval()
 
     g_prior_src, g_prior_dst = g.find_edges(g_prior_edges)
-    g_prior = DGLGraph()
+    g_prior = DGLGraph(multigraph=True)
     g_prior.add_nodes(g.number_of_nodes())
     g_prior.add_edges(g_prior_src, g_prior_dst)
     g_prior.ndata.update({k: v for k, v in g.ndata.items()})
@@ -126,10 +166,12 @@ def runtrain(g_prior_edges, g_train_edges, train):
     src = src[mask]
     dst = dst[mask]
     dst_neg = dst_neg[mask]
+    edge_shuffled = edge_shuffled[mask]
     # Chop the users, items and negative items into batches and reorganize
     # them into seed nodes.
     # Note that the batch size of DGL sampler here is 3 times our batch size,
     # since the sampler is handling 3 nodes per training example.
+    edge_batches = edge_shuffled.split(batch_size)
     src_batches = src.split(batch_size)
     dst_batches = dst.split(batch_size)
     dst_neg_batches = dst_neg.split(batch_size)
@@ -162,6 +204,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
             # SAMPLING PROCESS BEGIN
             # find the source nodes (users), destination nodes (positive products), and
             # negative destination nodes (negative products) in *original* graph.
+            edges = edge_batches[batch_id]
             src = src_batches[batch_id]
             dst = dst_batches[batch_id]
             dst_neg = dst_neg_batches[batch_id]
@@ -190,6 +233,15 @@ def runtrain(g_prior_edges, g_train_edges, train):
             output_idx = nodeflow.map_from_parent_nid(-1, nodeset)
             h = node_output[output_idx]
             h_src, h_dst, h_dst_neg = h.split([src_size, dst_size, dst_neg_size])
+
+            # For CIKM, add query/category embeddings to user embeddings.
+            # This is somehow inspired by TransE
+            if args.dataset == 'cikm':
+                tokens = cuda(g.edges[edges].data['tokens'])
+                category = cuda(g.edges[edges].data['category'])
+                h_tokens = model.emb['tokens'](tokens).mean(1)
+                h_category = model.emb['category'](category)
+                h_src = h_src + h_tokens + h_category
 
             diff = (h_src * (h_dst_neg - h_dst)).sum(1)
             loss = loss_func[args.loss](diff)
@@ -224,7 +276,7 @@ def runtest(g_prior_edges, validation=True):
     n_items = len(ml.product_ids)
 
     g_prior_src, g_prior_dst = g.find_edges(g_prior_edges)
-    g_prior = DGLGraph()
+    g_prior = DGLGraph(multigraph=True)
     g_prior.add_nodes(g.number_of_nodes())
     g_prior.add_edges(g_prior_src, g_prior_dst)
     g_prior.ndata.update({k: v for k, v in g.ndata.items()})
@@ -248,39 +300,7 @@ def runtest(g_prior_edges, validation=True):
             hs.append(h)
     h = torch.cat(hs, 0)
 
-    rr = []
-
-    with torch.no_grad():
-        with tqdm.trange(n_users) as tq:
-            for u_nid in tq:
-                uid = ml.user_ids[u_nid]
-                pids_exclude = ml.ratings[
-                        (ml.ratings['user_id'] == uid) &
-                        (ml.ratings['train'] | ml.ratings['test' if validation else 'valid'])
-                        ]['product_id'].values
-                pids_candidate = ml.ratings[
-                        (ml.ratings['user_id'] == uid) &
-                        ml.ratings['valid' if validation else 'test']
-                        ]['product_id'].values
-                pids = np.setdiff1d(ml.product_ids, pids_exclude)
-                p_nids = np.array([ml.product_ids_invmap[pid] for pid in pids])
-                p_nids_candidate = np.array([ml.product_ids_invmap[pid] for pid in pids_candidate])
-
-                dst = torch.from_numpy(p_nids) + n_users
-                src = torch.zeros_like(dst).fill_(u_nid)
-                h_dst = h[dst]
-                h_src = h[src]
-
-                score = (h_src * h_dst).sum(1)
-                score_sort_idx = score.sort(descending=True)[1].cpu().numpy()
-
-                rank_map = {v: i for i, v in enumerate(p_nids[score_sort_idx])}
-                rank_candidates = np.array([rank_map[p_nid] for p_nid in p_nids_candidate])
-                rank = 1 / (rank_candidates + 1)
-                rr.append(rank.mean())
-                tq.set_postfix({'rank': rank.mean()})
-
-    return np.array(rr)
+    return compute_validation(ml, h, model)
 
 
 def refresh_mask():
