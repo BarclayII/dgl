@@ -96,6 +96,7 @@ class CIKM(UserProductDataset):
                 ratings_with_session
                 .fillna({'categoryId': 0, 'searchstring.tokens': ''})
                 .astype({'categoryId': 'int64'}))
+        get_token_list(ratings_with_session, 'searchstring.tokens', 'tokens')
         ratings = ratings_with_session.drop('sessionId', axis=1).drop_duplicates()
 
         self.users = pd.DataFrame({'id': ratings['userId'].unique()}).set_index('id')
@@ -110,7 +111,6 @@ class CIKM(UserProductDataset):
         assert self.products['categoryId'].notnull().all()
 
         get_token_list(self.products, 'product.name.tokens', 'tokens')
-        get_token_list(ratings, 'searchstring.tokens', 'tokens')
 
         ratings = ratings.rename({'userId': 'user_id', 'itemId': 'product_id'}, axis=1)
         ratings_with_session = ratings_with_session.rename({'userId': 'user_id', 'itemId': 'product_id'}, axis=1)
@@ -190,7 +190,6 @@ class CIKM(UserProductDataset):
                 rating_user_vertices,
                 data={
                     'inv': torch.ones(self.ratings.shape[0], dtype=torch.uint8),
-
                     'tokens': tokens,
                     'category': category,
                     })

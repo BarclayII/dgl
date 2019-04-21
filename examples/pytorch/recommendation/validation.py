@@ -44,22 +44,25 @@ def compute_validation_cikm(ml, h, model):
     outfile = open('submission.txt', 'w')
 
     with torch.no_grad():
-        queries = ml.test_queries.dropna(subset=['userId'], axis=0)
+        queries = ml.test_queries
         with tqdm.tqdm(queries.iterrows()) as tq:
             for idx, row in tq:
                 uid = row['userId']
-                if np.isnan(uid):
-                    continue
-                if int(uid) not in ml.user_ids_invmap:
-                    continue
-                uid = ml.user_ids_invmap[int(uid)]
                 items = [ml.product_ids_invmap[int(i)]
                          for i in row['items'].split(',')
                          if int(i) in ml.product_ids_invmap]
                 unknown_items = [i for i in row['items'].split(',')
                                  if int(i) not in ml.product_ids_invmap]
-                h_src = h[uid]
                 h_dst = h[items]
+
+                if np.isnan(uid):
+                    h_src = 0
+                else:
+                    if int(uid) not in ml.user_ids_invmap:
+                        print('WARNING: %d not showing up in ml.user_ids_invmap' % uid)
+                        continue
+                    uid = ml.user_ids_invmap[int(uid)]
+                    h_src = h[uid]
 
                 if isinstance(row['searchstring.tokens'], str):     # i.e. not nan
                     tokens = cuda(torch.LongTensor(

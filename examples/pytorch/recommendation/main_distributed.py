@@ -128,6 +128,21 @@ def forward(model, nodeflow, train=True):
         with torch.no_grad():
             return model(nodeflow, None)
 
+
+def find_negs(dst, ml, neighbors, hard_neg_prob, n_negs):
+    dst_neg = []
+    for i in range(len(dst)):
+        if np.random.rand() < hard_neg_prob:
+            nb = torch.LongTensor(neighbors[dst[i].item()])
+            mask = ~(g.has_edges_between(nb, src[i].item()).byte())
+            dst_neg.append(np.random.choice(nb[mask].numpy(), n_negs))
+        else:
+            dst_neg.append(np.random.randint(
+                len(ml.user_ids), len(ml.user_ids) + len(ml.product_ids), n_negs))
+    dst_neg = torch.LongTensor(dst_neg)
+    return dst_neg
+
+
 def runtrain(g_prior_edges, g_train_edges, train):
     global opt
     if train:
@@ -144,16 +159,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
     # prepare seed nodes
     edge_shuffled = g_train_edges[torch.randperm(g_train_edges.shape[0])]
     src, dst = g.find_edges(edge_shuffled)
-    dst_neg = []
-    for i in range(len(dst)):
-        if np.random.rand() < hard_neg_prob:
-            nb = torch.LongTensor(neighbors[dst[i].item()])
-            mask = ~(g.has_edges_between(nb, src[i].item()).byte())
-            dst_neg.append(np.random.choice(nb[mask].numpy(), n_negs))
-        else:
-            dst_neg.append(np.random.randint(
-                len(ml.user_ids), len(ml.user_ids) + len(ml.product_ids), n_negs))
-    dst_neg = torch.LongTensor(dst_neg)
+    dst_neg = find_negs(dst, ml, neighbors, hard_neg_prob, n_negs)
     # expand if we have multiple negative products for each training pair
     dst = dst.view(-1, 1).expand_as(dst_neg).flatten()
     src = src.view(-1, 1).expand_as(dst_neg).flatten()
@@ -194,6 +200,43 @@ def runtrain(g_prior_edges, g_train_edges, train):
             add_self_loop=True,
             num_workers=20)
     sampler_iter = iter(sampler)
+
+    if args.dataset == 'cikm':
+        anonymous_indices = torch.LongTensor(np.random.permutation(len(ml.anonymous_ratings)))
+        dst = [len(ml.user_ids) + ml.product_ids_invmap[ml.anonymous_ratings.iloc[i]['product_id']]
+               for i in anonymous_indices]
+        dst = torch.LongTensor(dst)
+        dst_neg = find_negs(dst, ml, neighbors, hard_neg_prob, n_negs)
+
+        dst = dst.view(-1, 1).expand_as(dst_neg).flatten()
+        dst_neg = dst_neg.flatten()
+
+        mask = (g_prior.in_degrees(dst_neg) > 0) & (g_prior.in_degrees(dst) > 0)
+        dst = dst[mask]
+        dst_neg = dst_neg[mask]
+        anonymous_indices = anonymous_indices[mask]
+
+        anonymous_dst_batches = dst.split(batch_size)
+        anonymous_dst_neg_batches = dst_neg.split(batch_size)
+        anonymous_batches = anonymous_indices.split(batch_size)
+        seed_nodes = []
+        for i in range(len(anonymous_dst_batches)):
+            seed_nodes.append(anonymous_dst_batches[i])
+            seed_nodes.append(anonymous_dst_neg_batches[i])
+        seed_nodes = torch.cat(seed_nodes)
+
+        anonymous_sampler = PPRBipartiteSingleSidedNeighborSampler(
+                g_prior,
+                batch_size * 3,
+                n_layers + 1,
+                10,
+                20,
+                seed_nodes=anonymous_seed_nodes,
+                restart_prob=0.5,
+                prefetch=True,
+                add_self_loop=True,
+                num_workers=20)
+        anonymous_sampler_iter = iter(anonymous_sampler)
 
     with tqdm.trange(len(src_batches)) as tq:
         sum_loss = 0
@@ -242,6 +285,42 @@ def runtrain(g_prior_edges, g_train_edges, train):
                 h_tokens = model.emb['tokens'](tokens).mean(1)
                 h_category = model.emb['category'](category)
                 h_src = h_src + h_tokens + h_category
+
+            if args.dataset == 'cikm':
+                # train an additional batch of anonymous queries
+                row_indices = anonymous_batches[batch_id].numpy()
+                dst = anonymous_dst_batches[batch_id]
+                dst_neg = anonymous_dst_neg_batches[batch_id]
+                dst_size = dst_neg_size = dst.shape[0]
+                count += dst_size
+
+                nodeset = torch.cat([dst, dst_neg])
+                nodeflow = next(anonymous_sampler_iter)
+                for i in range(nodeflow.num_layers - 1):
+                    assert np.isin(nodeflow.layer_parent_nid(i + 1).numpy(),
+                            nodeflow.layer_parent_nid(i).numpy()).all()
+                last_nid = nodeflow.layer_parent_nid(-1).all()
+                assert np.isin(dst.numpy(), last_nid).all()
+                assert np.isin(dst_neg.numpy(), last_nid).all()
+
+                nodeflow.copy_from_parent()
+                cast_ppr_weight(nodeflow)
+
+                node_output = forward(model, nodeflow, train)
+                output_idx = nodeflow.map_from_parent_nid(-1, nodeset)
+                h = node_output[output_idx]
+                h_anonymous_dst, h_anonymous_dst_neg = h.split([dst_size, dst_neg_size])
+                h_dst = torch.cat([h_dst, h_anonymous_dst])
+                h_dst_neg = torch.cat([h_dst_neg, h_anonymous_dst_neg])
+
+                tokens = ml.anonymous_ratings.iloc[row_indices]['tokens'].tolist()
+                tokens = cuda(torch.LongTensor(tokens))
+                category = ml.anonymous_ratings.iloc[row_indices]['category'].tolist()
+                category = cuda(torch.LongTensor(category))
+                h_tokens = model.emb['tokens'](tokens).mean(1)
+                h_category = model.emb['category'](category)
+                h_anonymous_src = h_tokens + h_category
+                h_src = torch.cat([h_src, h_anonymous_src])
 
             diff = (h_src * (h_dst_neg - h_dst)).sum(1)
             loss = loss_func[args.loss](diff)
