@@ -85,7 +85,7 @@ class CIKM(UserProductDataset):
         train_queries_with_clicks = fill_users(user_mapping, train_queries_with_clicks)
         train_purchases = fill_users(user_mapping, train_purchases)
         train_item_views = fill_users(user_mapping, train_item_views)
-
+        test_queries = fill_users(user_mapping, test_queries)
 
         ratings_with_session = pd.concat([
             train_queries_with_clicks[['sessionId', 'userId', 'itemId', 'searchstring.tokens', 'categoryId']],
@@ -96,8 +96,10 @@ class CIKM(UserProductDataset):
                 ratings_with_session
                 .fillna({'categoryId': 0, 'searchstring.tokens': ''})
                 .astype({'categoryId': 'int64'}))
-        get_token_list(ratings_with_session, 'searchstring.tokens', 'tokens')
         ratings = ratings_with_session.drop('sessionId', axis=1).drop_duplicates()
+        ratings = ratings.dropna(subset=['userId'])
+        get_token_list(ratings_with_session, 'searchstring.tokens', 'tokens')
+        get_token_list(ratings, 'searchstring.tokens', 'tokens')
 
         self.users = pd.DataFrame({'id': ratings['userId'].unique()}).set_index('id')
         self.products = pd.DataFrame({'itemId': ratings['itemId'].unique()}).set_index('itemId')
@@ -117,7 +119,6 @@ class CIKM(UserProductDataset):
         self.ratings_with_session = ratings_with_session
         self.ratings_complete = ratings
 
-        ratings = ratings.dropna(subset=['user_id'])
         product_count = ratings['product_id'].value_counts()
         user_count = ratings['user_id'].value_counts()
         product_count.name = 'product_count'

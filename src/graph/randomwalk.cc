@@ -370,7 +370,7 @@ std::vector<NodeFlow *> PPRNeighborSampling(
       (num_seeds + batch_size - 1) / batch_size - batch_start_id);
 
   std::vector<NodeFlow *> nflows(num_workers);
-#pragma omp parallel for
+//#pragma omp parallel for
   for (int i = 0; i < num_workers; ++i) {
     const int64_t start = (batch_start_id + i) * batch_size;
     const int64_t end = std::min(start + batch_size, num_seeds);

@@ -42,13 +42,11 @@ if os.path.exists(cache_file):
 elif args.dataset == 'movielens':
     from rec.datasets.movielens import MovieLens
     ml = MovieLens('./ml-1m')
-    neighbors = ml.user_neighbors + ml.product_neighbors
     with open(cache_file, 'wb') as f:
         pickle.dump(ml, f, protocol=4)
 elif args.dataset == 'cikm':
     from rec.datasets.cikm import CIKM
     ml = CIKM('/efs/quagan/diginetica/dataset-train')
-    neighbors = []
     with open(cache_file, 'wb') as f:
         pickle.dump(ml, f, protocol=4)
 else:
@@ -58,6 +56,11 @@ else:
         raise ValueError('Hard negative examples currently not supported on reddit.')
     with open(cache_file, 'wb') as f:
         pickle.dump(ml, f, protocol=4)
+
+if args.dataset == 'movielens':
+    neighbors = ml.user_neighbors + ml.product_neighbors
+else:
+    neighbors = []
 
 _compute_validation = {
         'movielens': compute_validation_ml,
@@ -80,7 +83,7 @@ print(len(v2))
 
 n_hidden = 100
 n_layers = args.layers
-batch_size = 32
+batch_size = 16
 margin = 0.9
 
 n_negs = args.n_negs
@@ -142,7 +145,6 @@ def find_negs(dst, ml, neighbors, hard_neg_prob, n_negs):
     dst_neg = torch.LongTensor(dst_neg)
     return dst_neg
 
-
 def runtrain(g_prior_edges, g_train_edges, train):
     global opt
     if train:
@@ -203,8 +205,15 @@ def runtrain(g_prior_edges, g_train_edges, train):
 
     if args.dataset == 'cikm':
         anonymous_indices = torch.LongTensor(np.random.permutation(len(ml.anonymous_ratings)))
-        dst = [len(ml.user_ids) + ml.product_ids_invmap[ml.anonymous_ratings.iloc[i]['product_id']]
-               for i in anonymous_indices]
+        dst_mask = np.isin(
+                ml.anonymous_ratings.iloc[anonymous_indices.numpy()]['product_id'].values,
+                np.array(ml.product_ids))
+        dst_mask = torch.ByteTensor(dst_mask)
+        anonymous_indices = anonymous_indices[dst_mask]
+        anonymous_product_id = ml.anonymous_ratings.iloc[anonymous_indices.numpy()]['product_id'].values
+        num_users = len(ml.user_ids)
+        dst = [num_users + ml.product_ids_invmap[i]
+               for i in anonymous_product_id]
         dst = torch.LongTensor(dst)
         dst_neg = find_negs(dst, ml, neighbors, hard_neg_prob, n_negs)
 
@@ -227,11 +236,11 @@ def runtrain(g_prior_edges, g_train_edges, train):
 
         anonymous_sampler = PPRBipartiteSingleSidedNeighborSampler(
                 g_prior,
-                batch_size * 3,
+                batch_size * 2,
                 n_layers + 1,
                 10,
                 20,
-                seed_nodes=anonymous_seed_nodes,
+                seed_nodes=seed_nodes,
                 restart_prob=0.5,
                 prefetch=True,
                 add_self_loop=True,
@@ -299,7 +308,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
                 for i in range(nodeflow.num_layers - 1):
                     assert np.isin(nodeflow.layer_parent_nid(i + 1).numpy(),
                             nodeflow.layer_parent_nid(i).numpy()).all()
-                last_nid = nodeflow.layer_parent_nid(-1).all()
+                last_nid = nodeflow.layer_parent_nid(-1)
                 assert np.isin(dst.numpy(), last_nid).all()
                 assert np.isin(dst_neg.numpy(), last_nid).all()
 
@@ -315,7 +324,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
 
                 tokens = ml.anonymous_ratings.iloc[row_indices]['tokens'].tolist()
                 tokens = cuda(torch.LongTensor(tokens))
-                category = ml.anonymous_ratings.iloc[row_indices]['category'].tolist()
+                category = ml.anonymous_ratings.iloc[row_indices]['categoryId'].tolist()
                 category = cuda(torch.LongTensor(category))
                 h_tokens = model.emb['tokens'](tokens).mean(1)
                 h_category = model.emb['category'](category)
@@ -331,9 +340,10 @@ def runtrain(g_prior_edges, g_train_edges, train):
             if train:
                 opt.zero_grad()
                 loss.backward()
-                for name, p in model.named_parameters():
-                    assert (p.grad != p.grad).sum() == 0
-                    grad_sqr_norm += p.grad.norm().item() ** 2
+                #for name, p in model.named_parameters():
+                    #assert (p.grad != p.grad).sum() == 0
+                    #grad_sqr_norm += p.grad.norm().item() ** 2
+                grad_sqr_norm = 0
                 opt.step()
 
             sum_loss += loss.item()
@@ -406,16 +416,17 @@ def train():
 
     for epoch in range(500):
         print('Epoch %d validation' % epoch)
-        with torch.no_grad():
-            valid_mrr = runtest(g_prior_train_edges, True)
-            if best_mrr < valid_mrr.mean():
-                best_mrr = valid_mrr.mean()
-                torch.save(model.state_dict(), 'model.pt')
-        print(pd.Series(valid_mrr).describe())
-        print('Epoch %d test' % epoch)
-        with torch.no_grad():
-            test_mrr = runtest(g_prior_train_edges, False)
-        print(pd.Series(test_mrr).describe())
+        if 0:
+            with torch.no_grad():
+                valid_mrr = runtest(g_prior_train_edges, True)
+                if best_mrr < valid_mrr.mean():
+                    best_mrr = valid_mrr.mean()
+                    torch.save(model.state_dict(), 'model.pt')
+            print(pd.Series(valid_mrr).describe())
+            print('Epoch %d test' % epoch)
+            with torch.no_grad():
+                test_mrr = runtest(g_prior_train_edges, False)
+            print(pd.Series(test_mrr).describe())
 
         print('Epoch %d train' % epoch)
         runtrain(g_prior_edges, g_train_edges, True)
