@@ -183,33 +183,14 @@ def runtrain(g_prior_edges, g_train_edges, train):
     src_batches = src.split(batch_size)
     dst_batches = dst.split(batch_size)
     dst_neg_batches = dst_neg.split(batch_size)
-    seed_nodes = []
-    for i in range(len(src_batches)):
-        seed_nodes.append(src_batches[i])
-        seed_nodes.append(dst_batches[i])
-        seed_nodes.append(dst_neg_batches[i])
-    seed_nodes = torch.cat(seed_nodes)
-
-    sampler = PPRBipartiteSingleSidedNeighborSampler(
-            g_prior,
-            batch_size * 3,
-            n_layers + 1,
-            10,
-            20,
-            seed_nodes=seed_nodes,
-            restart_prob=0.5,
-            prefetch=True,
-            add_self_loop=True,
-            num_workers=20)
-    sampler_iter = iter(sampler)
 
     if args.dataset == 'cikm':
         anonymous_indices = torch.LongTensor(np.random.permutation(len(ml.anonymous_ratings)))
-        dst_mask = np.isin(
+        anonymous_dst_mask = np.isin(
                 ml.anonymous_ratings.iloc[anonymous_indices.numpy()]['product_id'].values,
                 np.array(ml.product_ids))
-        dst_mask = torch.ByteTensor(dst_mask)
-        anonymous_indices = anonymous_indices[dst_mask]
+        anonymous_dst_mask = torch.ByteTensor(anonymous_dst_mask)
+        anonymous_indices = anonymous_indices[anonymous_dst_mask]
         anonymous_product_id = ml.anonymous_ratings.iloc[anonymous_indices.numpy()]['product_id'].values
         num_users = len(ml.user_ids)
         dst = [num_users + ml.product_ids_invmap[i]
@@ -228,24 +209,29 @@ def runtrain(g_prior_edges, g_train_edges, train):
         anonymous_dst_batches = dst.split(batch_size)
         anonymous_dst_neg_batches = dst_neg.split(batch_size)
         anonymous_batches = anonymous_indices.split(batch_size)
-        seed_nodes = []
-        for i in range(len(anonymous_dst_batches)):
+
+    seed_nodes = []
+    for i in range(len(src_batches)):
+        seed_nodes.append(src_batches[i])
+        seed_nodes.append(dst_batches[i])
+        seed_nodes.append(dst_neg_batches[i])
+        if args.dataset == 'cikm':
             seed_nodes.append(anonymous_dst_batches[i])
             seed_nodes.append(anonymous_dst_neg_batches[i])
-        seed_nodes = torch.cat(seed_nodes)
+    seed_nodes = torch.cat(seed_nodes)
 
-        anonymous_sampler = PPRBipartiteSingleSidedNeighborSampler(
-                g_prior,
-                batch_size * 2,
-                n_layers + 1,
-                10,
-                20,
-                seed_nodes=seed_nodes,
-                restart_prob=0.5,
-                prefetch=True,
-                add_self_loop=True,
-                num_workers=20)
-        anonymous_sampler_iter = iter(anonymous_sampler)
+    sampler = PPRBipartiteSingleSidedNeighborSampler(
+            g_prior,
+            batch_size * (3 if args.dataset != 'cikm' else 5),
+            n_layers + 1,
+            10,
+            20,
+            seed_nodes=seed_nodes,
+            restart_prob=0.5,
+            prefetch=True,
+            add_self_loop=True,
+            num_workers=20)
+    sampler_iter = iter(sampler)
 
     with tqdm.trange(len(src_batches)) as tq:
         sum_loss = 0
@@ -260,20 +246,23 @@ def runtrain(g_prior_edges, g_train_edges, train):
             src = src_batches[batch_id]
             dst = dst_batches[batch_id]
             dst_neg = dst_neg_batches[batch_id]
+
             src_size = dst_size = dst_neg_size = src.shape[0]
             count += src_size
 
+            if args.dataset == 'cikm':
+                # train an additional batch of anonymous queries
+                row_indices = anonymous_batches[batch_id].numpy()
+                anonymous_dst = anonymous_dst_batches[batch_id]
+                anonymous_dst_neg = anonymous_dst_neg_batches[batch_id]
+                anon_dst_size = anon_dst_neg_size = anonymous_dst.shape[0]
+                count += anon_dst_size
+
             # Generate a NodeFlow given the sources/destinations/negative destinations.  We need
             # GCN output of those nodes.
-            nodeset = torch.cat([src, dst, dst_neg])
+            nodeset = torch.cat([src, dst, dst_neg] if args.dataset != 'cikm' else
+                                [src, dst, dst_neg, anonymous_dst, anonymous_dst_neg])
             nodeflow = next(sampler_iter)
-            for i in range(nodeflow.num_layers - 1):
-                assert np.isin(nodeflow.layer_parent_nid(i + 1).numpy(),
-                        nodeflow.layer_parent_nid(i).numpy()).all()
-            last_nid = nodeflow.layer_parent_nid(-1).numpy()
-            assert np.isin(src.numpy(), last_nid).all()
-            assert np.isin(dst.numpy(), last_nid).all()
-            assert np.isin(dst_neg.numpy(), last_nid).all()
             # SAMPLING PROCESS END
             # copy features from parent graph
             nodeflow.copy_from_parent()
@@ -284,7 +273,11 @@ def runtrain(g_prior_edges, g_train_edges, train):
             node_output = forward(model, nodeflow, train)
             output_idx = nodeflow.map_from_parent_nid(-1, nodeset)
             h = node_output[output_idx]
-            h_src, h_dst, h_dst_neg = h.split([src_size, dst_size, dst_neg_size])
+            if args.dataset != 'cikm':
+                h_src, h_dst, h_dst_neg = h.split([src_size, dst_size, dst_neg_size])
+            else:
+                h_src, h_dst, h_dst_neg, h_anon_dst, h_anon_dst_neg = h.split(
+                        [src_size, dst_size, dst_neg_size, anon_dst_size, anon_dst_neg_size])
 
             # For CIKM, add query/category embeddings to user embeddings.
             # This is somehow inspired by TransE
@@ -295,32 +288,8 @@ def runtrain(g_prior_edges, g_train_edges, train):
                 h_category = model.emb['category'](category)
                 h_src = h_src + h_tokens + h_category
 
-            if args.dataset == 'cikm':
-                # train an additional batch of anonymous queries
-                row_indices = anonymous_batches[batch_id].numpy()
-                dst = anonymous_dst_batches[batch_id]
-                dst_neg = anonymous_dst_neg_batches[batch_id]
-                dst_size = dst_neg_size = dst.shape[0]
-                count += dst_size
-
-                nodeset = torch.cat([dst, dst_neg])
-                nodeflow = next(anonymous_sampler_iter)
-                for i in range(nodeflow.num_layers - 1):
-                    assert np.isin(nodeflow.layer_parent_nid(i + 1).numpy(),
-                            nodeflow.layer_parent_nid(i).numpy()).all()
-                last_nid = nodeflow.layer_parent_nid(-1)
-                assert np.isin(dst.numpy(), last_nid).all()
-                assert np.isin(dst_neg.numpy(), last_nid).all()
-
-                nodeflow.copy_from_parent()
-                cast_ppr_weight(nodeflow)
-
-                node_output = forward(model, nodeflow, train)
-                output_idx = nodeflow.map_from_parent_nid(-1, nodeset)
-                h = node_output[output_idx]
-                h_anonymous_dst, h_anonymous_dst_neg = h.split([dst_size, dst_neg_size])
-                h_dst = torch.cat([h_dst, h_anonymous_dst])
-                h_dst_neg = torch.cat([h_dst_neg, h_anonymous_dst_neg])
+                h_dst = torch.cat([h_dst, h_anon_dst])
+                h_dst_neg = torch.cat([h_dst_neg, h_anon_dst_neg])
 
                 tokens = ml.anonymous_ratings.iloc[row_indices]['tokens'].tolist()
                 tokens = cuda(torch.LongTensor(tokens))
@@ -328,8 +297,8 @@ def runtrain(g_prior_edges, g_train_edges, train):
                 category = cuda(torch.LongTensor(category))
                 h_tokens = model.emb['tokens'](tokens).mean(1)
                 h_category = model.emb['category'](category)
-                h_anonymous_src = h_tokens + h_category
-                h_src = torch.cat([h_src, h_anonymous_src])
+                h_anon_src = h_tokens + h_category
+                h_src = torch.cat([h_src, h_anon_src])
 
             diff = (h_src * (h_dst_neg - h_dst)).sum(1)
             loss = loss_func[args.loss](diff)

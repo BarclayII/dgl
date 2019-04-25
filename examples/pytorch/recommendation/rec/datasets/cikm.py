@@ -3,6 +3,7 @@ import numpy as np
 import pickle
 import pandas as pd
 import os
+import tqdm
 from functools import partial
 from .base import UserProductDataset
 
@@ -101,14 +102,23 @@ class CIKM(UserProductDataset):
         get_token_list(ratings_with_session, 'searchstring.tokens', 'tokens')
         get_token_list(ratings, 'searchstring.tokens', 'tokens')
 
+        get_token_list(train_queries_with_clicks, 'items', 'itemList')
+        query_candidates = []
+        for index, row in tqdm.tqdm(train_queries_with_clicks.iterrows()):
+            query_candidates.extend((row['queryId'], item) for item in row['itemList'])
+        self.query_candidates = pd.DataFrame(columns=['query_id', 'product_id'], data=query_candidates)
+
         self.users = pd.DataFrame({'id': ratings['userId'].unique()}).set_index('id')
-        self.products = pd.DataFrame({'itemId': ratings['itemId'].unique()}).set_index('itemId')
+        self.products = pd.DataFrame(
+                {'itemId': list(set(ratings['itemId']) | set(self.query_candidates['product_id']))}
+                ).set_index('itemId')
         self.products = (
                 self.products
                 .join(products.set_index('itemId'), on='itemId', how='left')
                 .fillna({'product.name.tokens': '', 'pricelog2': products['pricelog2'].mean()})
                 .join(product_categories.set_index('itemId'), on='itemId', how='left')
                 .fillna({'categoryId': 0}))
+        self.query_ids = self.query_candidates['query_id'].unique()
         assert self.products['product.name.tokens'].notnull().all()
         assert self.products['categoryId'].notnull().all()
 
@@ -136,35 +146,46 @@ class CIKM(UserProductDataset):
         self.anonymous_ratings = self.ratings_with_session[self.ratings_with_session['user_id'].isnull()]
 
     def build_graph(self):
+        # The graph consists of user nodes, item nodes, and query nodes.
+        # User and items form a bipartite graph while item and queries form another one.
+        # Note: we always perform 2-step random walks, so the neighbors of an item would
+        # always be an item.
+        # Note: the embedding of query nodes are NOT learned or used.
         import torch
         user_ids = list(self.users.index)
         product_ids = list(self.products.index)
+        query_ids = self.query_ids
         user_ids_invmap = {id_: i for i, id_ in enumerate(user_ids)}
         product_ids_invmap = {id_: i for i, id_ in enumerate(product_ids)}
+        query_ids_invmap = {id_: i for i, id_ in enumerate(query_ids)}
         self.user_ids = user_ids
         self.product_ids = product_ids
         self.user_ids_invmap = user_ids_invmap
         self.product_ids_invmap = product_ids_invmap
 
         g = dgl.DGLGraph(multigraph=True)
-        g.add_nodes(len(user_ids) + len(product_ids))
+        g.add_nodes(len(user_ids) + len(product_ids) + len(query_ids))
 
         tokens = torch.LongTensor(np.array(self.products['tokens'].tolist()))
         tokens = torch.cat(
-                [torch.zeros(len(user_ids), tokens.shape[1], dtype=torch.int64), tokens],
+                [torch.zeros(len(user_ids), tokens.shape[1], dtype=torch.int64),
+                 tokens,
+                 torch.zeros(len(query_ids), tokens.shape[1], dtype=torch.int64)],
                 0)
         logprice = torch.FloatTensor(self.products['pricelog2'].to_numpy())
         logprice = torch.cat(
-                [torch.zeros(len(user_ids)), logprice],
+                [torch.zeros(len(user_ids)), logprice, torch.zeros(len(query_ids))],
                 0)
         category = torch.LongTensor(self.products['categoryId'].to_numpy())
         category = torch.cat(
-                [torch.zeros(len(user_ids), dtype=torch.int64), category],
+                [torch.zeros(len(user_ids), dtype=torch.int64),
+                 category,
+                 torch.zeros(len(query_ids), dtype=torch.int64)],
                 0)
         g.ndata['tokens'] = tokens
         g.ndata['nid'] = torch.cat([
             torch.arange(1, 1 + len(user_ids)),
-            torch.zeros(len(product_ids), dtype=torch.int64)])
+            torch.zeros(len(product_ids) + len(query_ids), dtype=torch.int64)])
         g.ndata['category'] = category
         g.ndata['logprice'] = logprice[:, None]
 
@@ -195,6 +216,7 @@ class CIKM(UserProductDataset):
                     'category': category,
                     })
         self.g = g
+        self.g.readonly()
 
     def generate_mask(self):
         ratings = self.ratings

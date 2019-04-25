@@ -91,6 +91,7 @@ class Reddit(UserProductDataset):
                 rating_user_vertices,
                 data={'inv': torch.ones(self.ratings.shape[0], dtype=torch.uint8)})
         self.g = g
+        self.g.readonly()
 
     def generate_mask(self):
         ratings = self.ratings
@@ -99,7 +100,7 @@ class Reddit(UserProductDataset):
                 partial(self.split_user_product, filter_counts=2))
         print()
         prior_prob = ratings_grouped['prob'].values
-        train_mask = (prior_prob >= 0) & (prior_prob < 0.2)
+        train_mask = (prior_prob >= 0) & (prior_prob < 0.4)
         prior_mask = ~train_mask
         train_mask &= ratings_grouped['train'].values
         prior_mask &= ratings_grouped['train'].values
