@@ -260,8 +260,8 @@ def runtrain(g_prior_edges, g_train_edges, train):
 
             # Generate a NodeFlow given the sources/destinations/negative destinations.  We need
             # GCN output of those nodes.
-            nodeset = torch.cat([src, dst, dst_neg] if args.dataset != 'cikm' else
-                                [src, dst, dst_neg, anonymous_dst, anonymous_dst_neg])
+            nodeset = torch.cat([dst, dst_neg] if args.dataset != 'cikm' else
+                                [dst, dst_neg, anonymous_dst, anonymous_dst_neg])
             nodeflow = next(sampler_iter)
             # SAMPLING PROCESS END
             # copy features from parent graph
@@ -274,10 +274,11 @@ def runtrain(g_prior_edges, g_train_edges, train):
             output_idx = nodeflow.map_from_parent_nid(-1, nodeset)
             h = node_output[output_idx]
             if args.dataset != 'cikm':
-                h_src, h_dst, h_dst_neg = h.split([src_size, dst_size, dst_neg_size])
+                h_dst, h_dst_neg = h.split([dst_size, dst_neg_size])
             else:
-                h_src, h_dst, h_dst_neg, h_anon_dst, h_anon_dst_neg = h.split(
-                        [src_size, dst_size, dst_neg_size, anon_dst_size, anon_dst_neg_size])
+                h_dst, h_dst_neg, h_anon_dst, h_anon_dst_neg = h.split(
+                        [dst_size, dst_neg_size, anon_dst_size, anon_dst_neg_size])
+            h_src = model.emb['nid'](cuda(g.nodes[src].data['nid']))
 
             # For CIKM, add query/category embeddings to user embeddings.
             # This is somehow inspired by TransE
@@ -385,7 +386,7 @@ def train():
 
     for epoch in range(500):
         print('Epoch %d validation' % epoch)
-        if 0:
+        if 1:
             with torch.no_grad():
                 valid_mrr = runtest(g_prior_train_edges, True)
                 if best_mrr < valid_mrr.mean():
