@@ -141,3 +141,51 @@ def _recv_nodeflow(receiver, graph):
             raise RuntimeError('Got unexpected control code {}'.format(res))
     else:
         return NodeFlow(graph, res)
+
+def serialize_nodeflow(nodeflow):
+    """Serializes a NodeFlow without parent graph information into a Python
+    bytearray object.
+
+    Parameters
+    ----------
+    nodeflow : NodeFlow
+        The NodeFlow
+
+    Returns
+    -------
+    bytearray
+        The bytearray
+    """
+    return _CAPI_SerializeSubgraph(
+        nodeflow._graph._handle,
+        nd.zerocopy_from_numpy(nodeflow._layer_offsets),
+        nd.zerocopy_from_numpy(nodeflow._block_offsets),
+        nodeflow._node_mapping.todgltensor(),
+        nodeflow._edge_mapping.todgltensor()
+        if nodeflow._edge_mapping_available else None,
+        nodeflow._node_data_name,
+        nd.from_dlpack(F.zerocopy_to_dlpack(nodeflow._node_data))
+        if nodeflow._node_data_available else None,
+        nodeflow._edge_data_name,
+        nd.from_dlpack(F.zerocopy_to_dlpack(nodeflow._edge_data))
+        if nodeflow._edge_data_available else None)
+
+
+def deserialize_nodeflow(buf, graph):
+    """Deserializes the NodeFlow given the bytearray object and the parent
+    graph.
+
+    Parameters
+    ----------
+    buf : bytearray
+        The bytearray
+    graph : DGLGraph
+        The parent graph
+
+    Returns
+    -------
+    NodeFlow
+        The deserialized NodeFlow object
+    """
+    hdl = _CAPI_DeserializeSubgraph(buf)
+    return NodeFlow(graph, hdl)

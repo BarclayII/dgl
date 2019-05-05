@@ -16,6 +16,7 @@ g = generate_rand_graph(100)
 def start_trainer():
     sampler = dgl.contrib.sampling.SamplerReceiver(graph=g, addr='127.0.0.1:50051', num_sender=1)
     for subg in sampler:
+        print(len(dgl.network.serialize_nodeflow(subg)))
         seed_ids = subg.layer_parent_nid(-1)
         assert len(seed_ids) == 1
         src, dst, eid = g.in_edges(seed_ids, form='all')
@@ -42,8 +43,10 @@ def start_sampler():
     sender.close()
 
 def start_trainer2():
-    sampler = dgl.contrib.sampling.SamplerReceiver(addr='127.0.0.1:50051', num_sender=1)
-    for subg in sampler:
+    sampler = dgl.contrib.sampling.SamplerReceiver(graph=g, addr='127.0.0.1:50051', num_sender=1)
+    for _subg in sampler:
+        buf = dgl.network.serialize_nodeflow(_subg)
+        subg = dgl.network.deserialize_nodeflow(buf, g)
         eid = subg.block_eid(0)
         edata = F.asnumpy(subg.blocks[0].data['ppr_weight'])
         dst = F.asnumpy(subg.find_edges(eid)[1])
@@ -56,9 +59,9 @@ def start_sampler2():
     namebook = { 0:'127.0.0.1:50051' }
     sender = dgl.contrib.sampling.SamplerSender(namebook)
     for i, subg in enumerate(dgl.contrib.sampling.PPRNeighborSampler(
-            g, 1, 100, 100, 1000, num_workers=4)):
+            g, 1, 20, 20, 100, num_workers=4)):
         sender.send(subg, 0)
-        break
+    sender.signal(0)
 
     time.sleep(1)
     sender.close()
@@ -70,5 +73,5 @@ if __name__ == '__main__':
     p.join()
     p = mp.Process(target=start_trainer2)
     p.start()
-    start_sampler()
+    start_sampler2()
     p.join()

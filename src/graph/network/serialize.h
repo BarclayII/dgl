@@ -28,7 +28,7 @@ int64_t SerializeNodeFlow(char *data,
  * \param data pointer of data buffer
  * \param[out] nf output NodeFlow object
  */
-void DeserializeNodeFlow(char* data, NodeFlow *nf);
+void DeserializeNodeFlow(const char* data, NodeFlow *nf);
 
 // TODO(chao): we can add compression and decompression method here
 

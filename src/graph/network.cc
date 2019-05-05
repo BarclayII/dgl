@@ -80,31 +80,40 @@ DGL_REGISTER_GLOBAL("network._CAPI_DGLSenderConnect")
     }
   });
 
+namespace {
+
+NodeFlow PackNodeFlowArguments(DGLArgs args, int offset) {
+  NodeFlow nf;
+  DLManagedTensor *mt;
+
+  nf.layer_offsets = IdArray::FromDLPack(CreateTmpDLManagedTensor(args[offset]));
+  nf.flow_offsets = IdArray::FromDLPack(CreateTmpDLManagedTensor(args[offset + 1]));
+  nf.node_mapping = IdArray::FromDLPack(CreateTmpDLManagedTensor(args[offset + 2]));
+  if ((mt = CreateTmpDLManagedTensor(args[offset + 3])) == nullptr) {
+    nf.edge_mapping_available = false;
+  } else {
+    nf.edge_mapping_available = true;
+    nf.edge_mapping = IdArray::FromDLPack(mt);
+  }
+  std::string node_data_name = args[offset + 4];
+  nf.node_data_name = std::move(node_data_name);
+  if (!nf.node_data_name.empty())
+    nf.node_data = NDArray::FromDLPack(CreateTmpDLManagedTensor(args[offset + 5]));
+  std::string edge_data_name = args[offset + 6];
+  nf.edge_data_name = std::move(edge_data_name);
+  if (!nf.edge_data_name.empty())
+    nf.edge_data = NDArray::FromDLPack(CreateTmpDLManagedTensor(args[offset + 7]));
+  return nf;
+}
+
+};  // namespace
+
 DGL_REGISTER_GLOBAL("network._CAPI_SenderSendSubgraph")
 .set_body([] (DGLArgs args, DGLRetValue* rv) {
     CommunicatorHandle chandle = args[0];
     int recv_id = args[1];
     GraphHandle ghandle = args[2];
-    NodeFlow nf;
-    DLManagedTensor *mt;
-
-    nf.layer_offsets = IdArray::FromDLPack(CreateTmpDLManagedTensor(args[3]));
-    nf.flow_offsets = IdArray::FromDLPack(CreateTmpDLManagedTensor(args[4]));
-    nf.node_mapping = IdArray::FromDLPack(CreateTmpDLManagedTensor(args[5]));
-    if ((mt = CreateTmpDLManagedTensor(args[6])) == nullptr) {
-      nf.edge_mapping_available = false;
-    } else {
-      nf.edge_mapping_available = true;
-      nf.edge_mapping = IdArray::FromDLPack(mt);
-    }
-    std::string node_data_name = args[7];
-    nf.node_data_name = std::move(node_data_name);
-    if (!nf.node_data_name.empty())
-      nf.node_data = NDArray::FromDLPack(CreateTmpDLManagedTensor(args[8]));
-    std::string edge_data_name = args[9];
-    nf.edge_data_name = std::move(edge_data_name);
-    if (!nf.edge_data_name.empty())
-      nf.edge_data = NDArray::FromDLPack(CreateTmpDLManagedTensor(args[10]));
+    NodeFlow nf = PackNodeFlowArguments(args, 3);
 
     ImmutableGraph *ptr = static_cast<ImmutableGraph*>(ghandle);
     network::Sender* sender = static_cast<network::Sender*>(chandle);
@@ -182,6 +191,30 @@ DGL_REGISTER_GLOBAL("network._CAPI_ReceiverRecvSubgraph")
     } else {
       LOG(FATAL) << "Unknow control number: " << control;
     }
+  });
+
+DGL_REGISTER_GLOBAL("network._CAPI_SerializeSubgraph")
+.set_body([] (DGLArgs args, DGLRetValue* rv) {
+    GraphHandle ghandle = args[0];
+    NodeFlow nf = PackNodeFlowArguments(args, 1);
+
+    ImmutableGraph *ptr = static_cast<ImmutableGraph*>(ghandle);
+    char *buffer = new char[kMaxBufferSize];
+    int64_t data_size = network::SerializeNodeFlow(
+        buffer, ptr, nf);
+
+    DGLByteArray bytes{buffer, data_size};
+    *rv = bytes;
+    delete buffer;
+  });
+
+DGL_REGISTER_GLOBAL("network._CAPI_DeserializeSubgraph")
+.set_body([] (DGLArgs args, DGLRetValue* rv) {
+    std::string bytes = args[0];  // NOTE: this is actually a byte-array
+
+    NodeFlow* nf = new NodeFlow();
+    network::DeserializeNodeFlow(bytes.data(), nf);
+    *rv = static_cast<NodeFlowHandle>(nf);
   });
 
 }  // namespace network

@@ -207,12 +207,12 @@ int64_t SerializeNodeFlow(char* data,
   return total_size;
 }
 
-void DeserializeNodeFlow(char* data, NodeFlow *nf) {
+void DeserializeNodeFlow(const char* data, NodeFlow *nf) {
   // For each component, we first read its size at the
   // begining of the buffer and then read its binary data
-  char* data_ptr = data;
+  const char* data_ptr = data;
   // node_mapping
-  int64_t tensor_size = *(reinterpret_cast<int64_t*>(data_ptr));
+  int64_t tensor_size = *(reinterpret_cast<const int64_t*>(data_ptr));
   int64_t num_vertices = tensor_size / sizeof(int64_t);
   int64_t num_edges;
 
@@ -226,7 +226,7 @@ void DeserializeNodeFlow(char* data, NodeFlow *nf) {
   data_ptr += tensor_size;
 
   // layer offsets
-  tensor_size = *(reinterpret_cast<int64_t*>(data_ptr));
+  tensor_size = *(reinterpret_cast<const int64_t*>(data_ptr));
   int64_t num_hops_add_one = tensor_size / sizeof(int64_t);
   data_ptr += sizeof(int64_t);
   nf->layer_offsets = IdArray::Empty(
@@ -238,7 +238,7 @@ void DeserializeNodeFlow(char* data, NodeFlow *nf) {
   data_ptr += tensor_size;
 
   // flow offsets
-  tensor_size = *(reinterpret_cast<int64_t*>(data_ptr));
+  tensor_size = *(reinterpret_cast<const int64_t*>(data_ptr));
   int64_t num_hops = tensor_size / sizeof(int64_t);
   data_ptr += sizeof(int64_t);
   nf->flow_offsets = IdArray::Empty(
@@ -250,7 +250,7 @@ void DeserializeNodeFlow(char* data, NodeFlow *nf) {
   data_ptr += tensor_size;
 
   // edge_mapping
-  tensor_size = *(reinterpret_cast<int64_t*>(data_ptr));
+  tensor_size = *(reinterpret_cast<const int64_t*>(data_ptr));
   data_ptr += sizeof(int64_t);
   if (tensor_size == 0) {
     nf->edge_mapping_available = false;
@@ -267,18 +267,18 @@ void DeserializeNodeFlow(char* data, NodeFlow *nf) {
   }
 
   // node_data
-  int64_t node_ndim = *(reinterpret_cast<int64_t*>(data_ptr));
+  int64_t node_ndim = *(reinterpret_cast<const int64_t*>(data_ptr));
   data_ptr += sizeof(int64_t);
   if (node_ndim == 0) {
     nf->node_data_name = "";
   } else {
-    DLDataType *dtype_ptr = reinterpret_cast<DLDataType*>(data_ptr);
+    const DLDataType *dtype_ptr = reinterpret_cast<const DLDataType*>(data_ptr);
     data_ptr += sizeof(int64_t);
 
     nf->node_data_name = data_ptr;  // data_ptr points to null-terminated name string
     data_ptr += roundup(nf->node_data_name.length(), 8);
 
-    int64_t *node_shape_ptr = reinterpret_cast<int64_t*>(data_ptr);
+    const int64_t *node_shape_ptr = reinterpret_cast<const int64_t*>(data_ptr);
     int64_t node_data_size = dtype_ptr->bits / 8;
     data_ptr += node_ndim * sizeof(int64_t);
     std::vector<int64_t> node_data_shape(node_shape_ptr, node_shape_ptr + node_ndim);
@@ -291,18 +291,18 @@ void DeserializeNodeFlow(char* data, NodeFlow *nf) {
   }
 
   // edge_data
-  int64_t edge_ndim = *(reinterpret_cast<int64_t*>(data_ptr));
+  int64_t edge_ndim = *(reinterpret_cast<const int64_t*>(data_ptr));
   data_ptr += sizeof(int64_t);
   if (edge_ndim == 0) {
     nf->edge_data_name = "";
   } else {
-    DLDataType *dtype_ptr = reinterpret_cast<DLDataType*>(data_ptr);
+    const DLDataType *dtype_ptr = reinterpret_cast<const DLDataType*>(data_ptr);
     data_ptr += sizeof(int64_t);
 
     nf->edge_data_name = data_ptr;  // data_ptr points to null-terminated name string
     data_ptr += roundup(nf->edge_data_name.length(), 8);
 
-    int64_t *edge_shape_ptr = reinterpret_cast<int64_t*>(data_ptr);
+    const int64_t *edge_shape_ptr = reinterpret_cast<const int64_t*>(data_ptr);
     int64_t edge_data_size = dtype_ptr->bits / 8;
     data_ptr += edge_ndim * sizeof(int64_t);
     std::vector<int64_t> edge_data_shape(edge_shape_ptr, edge_shape_ptr + edge_ndim);
@@ -315,23 +315,23 @@ void DeserializeNodeFlow(char* data, NodeFlow *nf) {
   }
 
   // graph
-  int64_t indices_size = *(reinterpret_cast<int64_t*>(data_ptr));
+  int64_t indices_size = *(reinterpret_cast<const int64_t*>(data_ptr));
   num_edges = indices_size / sizeof(int64_t);
   data_ptr += sizeof(int64_t);
-  dgl_id_t *indices = reinterpret_cast<dgl_id_t*>(data_ptr);
+  const dgl_id_t *indices = reinterpret_cast<const dgl_id_t*>(data_ptr);
   data_ptr += indices_size;
 
-  int64_t edge_ids_size = *(reinterpret_cast<int64_t*>(data_ptr));
+  int64_t edge_ids_size = *(reinterpret_cast<const int64_t*>(data_ptr));
   data_ptr += sizeof(int64_t);
-  dgl_id_t *edge_ids = reinterpret_cast<dgl_id_t*>(data_ptr);
+  const dgl_id_t *edge_ids = reinterpret_cast<const dgl_id_t*>(data_ptr);
   data_ptr += edge_ids_size;
 
-  int64_t indptr_size = *(reinterpret_cast<int64_t*>(data_ptr));
+  int64_t indptr_size = *(reinterpret_cast<const int64_t*>(data_ptr));
   data_ptr += sizeof(int64_t);
-  int64_t *indptr = reinterpret_cast<int64_t*>(data_ptr);
+  const int64_t *indptr = reinterpret_cast<const int64_t*>(data_ptr);
   data_ptr += indptr_size;
 
-  int64_t flags = *(reinterpret_cast<int64_t*>(data_ptr));
+  int64_t flags = *(reinterpret_cast<const int64_t*>(data_ptr));
   data_ptr += sizeof(int64_t);
   bool multigraph = ((flags & 0x1) != 0);
 
