@@ -70,4 +70,5 @@ class UserProductDataset(object):
                 'train': torch.cat([train_tensor, train_tensor], 0),
                 }
 
-        self.g.edata.update(edge_data)
+        # not supporting slice
+        self.g.edges[torch.arange(0, len(self.ratings) * 2)].data.update(edge_data)

@@ -6,6 +6,7 @@ import os
 import tqdm
 from functools import partial
 from .base import UserProductDataset
+from ..utils import cuda
 
 def get_token_list(df, old_field, new_field):
     df[new_field] = (
@@ -106,7 +107,7 @@ class CIKM(UserProductDataset):
         query_candidates = []
         for index, row in tqdm.tqdm(train_queries_with_clicks.iterrows()):
             query_candidates.extend((row['queryId'], item) for item in row['itemList'])
-        self.query_candidates = pd.DataFrame(columns=['query_id', 'product_id'], data=query_candidates)
+        self.query_candidates = pd.DataFrame(columns=['query_id', 'product_id'], data=query_candidates).drop_duplicates()
 
         self.users = pd.DataFrame({'id': ratings['userId'].unique()}).set_index('id')
         self.products = pd.DataFrame(
@@ -195,7 +196,9 @@ class CIKM(UserProductDataset):
         self.rating_user_vertices = rating_user_vertices
         self.rating_product_vertices = rating_product_vertices
         tokens = torch.LongTensor(np.array(self.ratings['tokens'].tolist()))
+        tokens = torch.cat([torch.zeros(1, tokens.shape[1]).long(), tokens], 0)
         category = torch.LongTensor(self.ratings['categoryId'].to_numpy())
+        self.query_tokens = cuda(tokens)
 
         # NOTE: 'tokens' and 'category' do not take part in computation of
         # user/item node embeddings; they join after PinSage computation
@@ -204,7 +207,7 @@ class CIKM(UserProductDataset):
                 rating_product_vertices,
                 data={
                     'inv': torch.zeros(self.ratings.shape[0], dtype=torch.uint8),
-                    'tokens': tokens,
+                    'tokens_idx': torch.arange(1, len(rating_user_vertices) + 1).long(),
                     'category': category,
                     })
         g.add_edges(
@@ -212,9 +215,16 @@ class CIKM(UserProductDataset):
                 rating_user_vertices,
                 data={
                     'inv': torch.ones(self.ratings.shape[0], dtype=torch.uint8),
-                    'tokens': tokens,
+                    'tokens_idx': torch.arange(1, len(rating_user_vertices) + 1).long(),
                     'category': category,
                     })
+        cand_query_vertices = [query_ids_invmap[id_] + len(user_ids) + len(product_ids)
+                for id_ in self.query_candidates['query_id'].values]
+        cand_product_vertices = [product_ids_invmap[id_] + len(user_ids)
+                for id_ in self.query_candidates['product_id'].values]
+        g.add_edges(cand_query_vertices, cand_product_vertices)
+        g.add_edges(cand_product_vertices, cand_query_vertices)
+
         self.g = g
         self.g.readonly()
 

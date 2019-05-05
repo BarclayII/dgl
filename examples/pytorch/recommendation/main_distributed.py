@@ -100,7 +100,7 @@ loss_func = {
 
 if args.dataset == 'cikm':
     emb_tokens = nn.Embedding(
-            max(g.ndata['tokens'].max().item(), g.edata['tokens'].max().item()) + 1,
+            max(g.ndata['tokens'].max().item(), ml.query_tokens.max().item()) + 1,
             n_hidden)
     emb = {'tokens': emb_tokens}
 else:
@@ -157,6 +157,9 @@ def runtrain(g_prior_edges, g_train_edges, train):
     g_prior.add_nodes(g.number_of_nodes())
     g_prior.add_edges(g_prior_src, g_prior_dst)
     g_prior.ndata.update({k: v for k, v in g.ndata.items()})
+    if args.dataset == 'cikm':
+        item_query_src, item_query_dst = g.find_edges(list(range(len(ml.ratings) * 2, g.number_of_edges())))
+        g_prior.add_edges(item_query_src, item_query_dst)
 
     # prepare seed nodes
     edge_shuffled = g_train_edges[torch.randperm(g_train_edges.shape[0])]
@@ -283,7 +286,8 @@ def runtrain(g_prior_edges, g_train_edges, train):
             # For CIKM, add query/category embeddings to user embeddings.
             # This is somehow inspired by TransE
             if args.dataset == 'cikm':
-                tokens = cuda(g.edges[edges].data['tokens'])
+                tokens_idx = cuda(g.edges[edges].data['tokens_idx'])
+                tokens = ml.query_tokens[tokens_idx]
                 category = cuda(g.edges[edges].data['category'])
                 h_tokens = model.emb['tokens'](tokens).mean(1)
                 h_category = model.emb['category'](category)
@@ -339,15 +343,21 @@ def runtest(g_prior_edges, validation=True):
     g_prior.add_nodes(g.number_of_nodes())
     g_prior.add_edges(g_prior_src, g_prior_dst)
     g_prior.ndata.update({k: v for k, v in g.ndata.items()})
+    if args.dataset == 'cikm':
+        item_query_src, item_query_dst = g.find_edges(list(range(len(ml.ratings) * 2, g.number_of_edges())))
+        g_prior.add_edges(item_query_src, item_query_dst)
+
     sampler = PPRBipartiteSingleSidedNeighborSampler(
             g_prior,
             batch_size,
             n_layers + 1,
             10,
             20,
+            seed_nodes=torch.arange(n_users, n_users + n_items).long(),
             restart_prob=0.5,
             prefetch=False,
             add_self_loop=True,
+            shuffle=False,
             num_workers=20)
 
     hs = []
@@ -358,6 +368,9 @@ def runtest(g_prior_edges, validation=True):
             h = forward(model, nodeflow, False)
             hs.append(h)
     h = torch.cat(hs, 0)
+    h = torch.cat([
+        model.emb['nid'](cuda(torch.arange(0, n_users).long() + 1)),
+        h], 0)
 
     return compute_validation(ml, h, model)
 
