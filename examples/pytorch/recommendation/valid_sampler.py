@@ -32,6 +32,8 @@ parser.add_argument('--hard-neg-prob', type=float, default=0,
 parser.add_argument('--cache', type=str, default='/tmp/dataset.pkl',
                     help='File to cache the postprocessed dataset object')
 parser.add_argument('--dataset', type=str, default='movielens')
+parser.add_argument('--host', type=str, default='localhost')
+parser.add_argument('--port', type=int, default=5901)
 args = parser.parse_args()
 
 print(args)
@@ -96,7 +98,7 @@ if args.dataset == 'cikm':
     item_query_src, item_query_dst = g.find_edges(list(range(len(ml.ratings) * 2, g.number_of_edges())))
     g_prior.add_edges(item_query_src, item_query_dst)
 
-sender = NodeFlowSender('localhost', 5901)
+sender = NodeFlowSender(args.host, args.port)
 #seeds = torch.arange(n_users, n_users + n_items).long()
 
 for epoch in range(500):

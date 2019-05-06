@@ -32,6 +32,8 @@ parser.add_argument('--hard-neg-prob', type=float, default=0,
 parser.add_argument('--cache', type=str, default='/tmp/dataset.pkl',
                     help='File to cache the postprocessed dataset object')
 parser.add_argument('--dataset', type=str, default='movielens')
+parser.add_argument('--host', type=str, default='localhost')
+parser.add_argument('--port', type=int, default=5902)
 args = parser.parse_args()
 
 print(args)
@@ -107,7 +109,7 @@ else:
 
 
 
-sender = NodeFlowSender('localhost', 5902)
+sender = NodeFlowSender(args.host, args.port)
 
 for epoch in range(500):
     g_prior_src, g_prior_dst = g.find_edges(g_prior_edges)
