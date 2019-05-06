@@ -35,7 +35,7 @@ class NodeFlowSender(object):
 
     def recv(self):
         data_len = np.frombuffer(recvall(self.socket, 4, False), dtype='int32')[0]
-        with recvall(s, data_len, True) as bio:
+        with recvall(self.socket, data_len, True) as bio:
             data = pickle.load(bio)
         return data
 

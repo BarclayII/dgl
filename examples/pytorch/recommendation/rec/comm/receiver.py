@@ -75,7 +75,7 @@ class NodeFlowReceiver(object):
             with io.BytesIO() as bio:
                 bio.write(np.array([len(buf)], dtype='int32').tobytes())
                 bio.write(buf)
-                self.senders.sendall(bio.getvalue())
+                s.sendall(bio.getvalue())
 
     def __iter__(self):
         try:
