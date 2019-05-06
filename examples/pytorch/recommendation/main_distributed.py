@@ -127,6 +127,7 @@ def forward(model, nodeflow, train=True):
 
 
 train_sampler = NodeFlowReceiver(5902)
+train_sampler.waitfor(1)
 
 def runtrain(g_prior_edges, g_train_edges, train):
     global opt
@@ -244,6 +245,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
     return avg_loss, avg_acc
 
 valid_sampler = NodeFlowReceiver(5901)
+valid_sampler.waitfor(1)
 
 def runtest(g_prior_edges, validation=True):
     model.eval()

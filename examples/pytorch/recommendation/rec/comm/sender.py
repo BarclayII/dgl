@@ -3,12 +3,20 @@ import dgl
 import io
 import pickle
 import numpy as np
+import time
 from .utils import recvall
 
 class NodeFlowSender(object):
     def __init__(self, host, port):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-        s.connect((host, port))
+        for _ in range(30):
+            try:
+                s.connect((host, port))
+                break
+            except Exception as e:
+                print(e)
+                time.sleep(30)
+                continue
         print('Connected to %s:%d' % (host, port))
         self.socket = s
 

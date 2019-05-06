@@ -52,7 +52,18 @@ class NodeFlowReceiver(object):
 
     def waitfor(self, n):
         for i in range(n):
-            self._accept(self.listener, None)
+            print('Waiting for connection %d/%d' % (i + 1, n))
+            while True:
+                try:
+                    self._accept(self.listener, None)
+                    break
+                except socket.error as e:
+                    err = e.args[0]
+                    if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
+                        time.sleep(5)
+                        continue
+                    else:
+                        raise e
 
     def distribute(self, data_list):
         data_segments = np.array_split(data_list, len(self.senders))
