@@ -144,6 +144,12 @@ def runtrain(g_prior_edges, g_train_edges, train):
         item_query_src, item_query_dst = g.find_edges(list(range(len(ml.ratings) * 2, g.number_of_edges())))
         g_prior.add_edges(item_query_src, item_query_dst)
 
+    edge_shuffled = torch.randperm(g_train_edges.shape[0])
+    train_sampler.distribute(edge_shuffled.numpy())
+    if args.dataset == 'cikm':
+        anonymous_indices = np.random.permutation(len(ml.anonymous_ratings))
+        train_sampler.distribute(anonymous_indices)
+
     train_sampler.set_parent_graph(g_prior)
     train_sampler_iter = iter(train_sampler)
 

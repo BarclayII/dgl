@@ -6,29 +6,7 @@ import numpy as np
 import selectors
 import errno
 import time
-
-def _recvall(s, n, return_fd):
-    bio = io.BytesIO()
-    while bio.tell() < n:
-        try:
-            packet = s.recv(n - bio.tell())
-        except socket.error as e:
-            err = e.args[0]
-            if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
-                time.sleep(0.05)
-                continue
-            else:
-                raise e
-        if not packet:
-            raise IOError('Expected %d bytes, got %d' % (n, bio.tell()))
-        bio.write(packet)
-    if not return_fd:
-        buf = bio.getvalue()
-        bio.close()
-        return buf
-    else:
-        bio.seek(0)
-        return bio
+from .utils import recvall
 
 class NodeFlowReceiver(object):
     def __init__(self, port):
@@ -43,6 +21,7 @@ class NodeFlowReceiver(object):
         sel.register(s, selectors.EVENT_READ, self._accept)
         self.sel = sel
         self.listener = s
+        self.senders = []
 
         self.parent_graph = None
 
@@ -53,22 +32,39 @@ class NodeFlowReceiver(object):
         conn, addr = s.accept()
         print('Accepted connection', conn, 'from', addr)
         conn.setblocking(False)
+        self.senders.append(conn)
         self.sel.register(conn, selectors.EVENT_READ, self._read)
         return None, None
 
     def _read(self, s, mask):
-        aux_buffer_len, nf_buffer_len = np.frombuffer(_recvall(s, 8, False), dtype='int32')
+        aux_buffer_len, nf_buffer_len = np.frombuffer(recvall(s, 8, False), dtype='int32')
         if aux_buffer_len == 0 and nf_buffer_len == 0:
             print('Closing socket %s' % s)
             self.sel.unregister(s)
             s.close()
             return None, None
 
-        with _recvall(s, aux_buffer_len, True) as bio:
+        with recvall(s, aux_buffer_len, True) as bio:
             aux_data = pickle.load(bio)
-        nf_buffer = bytearray(_recvall(s, nf_buffer_len, False))
+        nf_buffer = bytearray(recvall(s, nf_buffer_len, False))
         nf = dgl.network.deserialize_nodeflow(nf_buffer, self.parent_graph)
         return nf, aux_data
+
+    def waitfor(self, n):
+        for i in range(n):
+            self._accept(self.listener, None)
+
+    def distribute(self, data_list):
+        data_segments = np.array_split(data_list, len(self.senders))
+        data_segments = [seg.tolist() for seg in data_segments]
+        for seg, s in zip(data_segments, self.senders):
+            with io.BytesIO() as bio:
+                pickle.dump(seg, bio)
+                buf = bio.getvalue()
+            with io.BytesIO() as bio:
+                bio.write(np.array([len(buf)], dtype='int32').tobytes())
+                bio.write(buf)
+                self.senders.sendall(bio.getvalue())
 
     def __iter__(self):
         try:

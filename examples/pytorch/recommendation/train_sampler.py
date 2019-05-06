@@ -120,7 +120,8 @@ for epoch in range(500):
         g_prior.add_edges(item_query_src, item_query_dst)
 
     # prepare seed nodes
-    edge_shuffled = g_train_edges[torch.randperm(g_train_edges.shape[0])]
+    #edge_shuffled = g_train_edges[torch.randperm(g_train_edges.shape[0])]
+    edge_shuffled = g_train_edges[torch.LongTensor(sender.recv())]
     src, dst = g.find_edges(edge_shuffled)
     dst_neg = find_negs(dst, ml, neighbors, hard_neg_prob, n_negs)
     # expand if we have multiple negative products for each training pair
@@ -146,7 +147,7 @@ for epoch in range(500):
     dst_neg_batches = dst_neg.split(batch_size)
 
     if args.dataset == 'cikm':
-        anonymous_indices = torch.LongTensor(np.random.permutation(len(ml.anonymous_ratings)))
+        anonymous_indices = torch.LongTensor(sender.recv())
         anonymous_dst_mask = np.isin(
                 ml.anonymous_ratings.iloc[anonymous_indices.numpy()]['product_id'].values,
                 np.array(ml.product_ids))

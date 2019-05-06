@@ -24,6 +24,12 @@ class NodeFlowSender(object):
             bio.write(nf_buffer)
             self.socket.sendall(bio.getvalue())
 
+    def recv(self):
+        data_len = np.frombuffer(recvall(self.socket, 4, False), dtype='int32')[0]
+        with recvall(s, data_len, True) as bio:
+            data = pickle.load(bio)
+        return data
+
     def close(self):
         self.socket.sendall(np.array([0, 0]).tobytes())
         self.socket.close()

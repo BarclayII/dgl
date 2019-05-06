@@ -97,9 +97,10 @@ if args.dataset == 'cikm':
     g_prior.add_edges(item_query_src, item_query_dst)
 
 sender = NodeFlowSender('localhost', 5901)
-seeds = torch.arange(n_users, n_users + n_items).long()
+#seeds = torch.arange(n_users, n_users + n_items).long()
 
 for epoch in range(500):
+    seeds = torch.LongTensor(sender.recv())
     sampler = PPRBipartiteSingleSidedNeighborSampler(
             g_prior,
             batch_size,
