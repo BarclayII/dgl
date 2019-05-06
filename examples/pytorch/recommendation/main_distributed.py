@@ -261,6 +261,7 @@ def runtest(g_prior_edges, validation=True):
         g_prior.add_edges(item_query_src, item_query_dst)
 
     valid_sampler.set_parent_graph(g_prior)
+    valid_sampler.distribute(np.arange(n_items))
     valid_sampler_iter = iter(valid_sampler)
 
     hs = []
