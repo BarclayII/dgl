@@ -3,6 +3,7 @@ import dgl
 import io
 import pickle
 import numpy as np
+from .utils import recvall
 
 class NodeFlowSender(object):
     def __init__(self, host, port):
