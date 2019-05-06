@@ -6,6 +6,7 @@ import numpy as np
 import tqdm
 from rec.model.pinsage import PinSage
 from rec.utils import cuda
+from rec.comm.receiver import NodeFlowReceiver
 from dgl import DGLGraph
 from dgl.contrib.sampling import PPRBipartiteSingleSidedNeighborSampler
 from validation import *
@@ -70,16 +71,6 @@ _compute_validation = {
 compute_validation = _compute_validation[args.dataset]
 
 g = ml.g
-
-import pandas as pd
-u, v = g.all_edges('uv')
-u = pd.Series(u.numpy())
-v = pd.Series(v.numpy())
-ucount = u.value_counts()
-v1 = torch.LongTensor(v[(ucount[u] == 1).values].values)
-vcount = g.out_degrees(v1)
-v2 = v1[vcount == 1]
-print(len(v2))
 
 n_hidden = 100
 n_layers = args.layers
@@ -331,6 +322,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
 
     return avg_loss, avg_acc
 
+valid_sampler = NodeFlowReceiver(5050)
 
 def runtest(g_prior_edges, validation=True):
     model.eval()
@@ -347,27 +339,23 @@ def runtest(g_prior_edges, validation=True):
         item_query_src, item_query_dst = g.find_edges(list(range(len(ml.ratings) * 2, g.number_of_edges())))
         g_prior.add_edges(item_query_src, item_query_dst)
 
-    sampler = PPRBipartiteSingleSidedNeighborSampler(
-            g_prior,
-            batch_size,
-            n_layers + 1,
-            10,
-            20,
-            seed_nodes=torch.arange(n_users, n_users + n_items).long(),
-            restart_prob=0.5,
-            prefetch=False,
-            add_self_loop=True,
-            shuffle=False,
-            num_workers=20)
+    valid_sampler.set_parent_graph(g_prior)
+    valid_sampler_iter = iter(valid_sampler)
 
     hs = []
+    auxs = []
     with torch.no_grad():
-        for nodeflow in tqdm.tqdm(sampler):
-            nodeflow.copy_from_parent()
-            cast_ppr_weight(nodeflow)
-            h = forward(model, nodeflow, False)
-            hs.append(h)
+        with tqdm.trange((n_items + batch_size - 1) // batch_size) as tq:
+            for _ in tq:
+                nodeflow, aux_data = next(valid_sampler_iter)
+                nodeflow.copy_from_parent()
+                cast_ppr_weight(nodeflow)
+                h = forward(model, nodeflow, False)
+                hs.append(h)
+                auxs.append(torch.LongTensor(aux_data))
     h = torch.cat(hs, 0)
+    auxs = torch.cat(auxs, 0)
+    h = h[auxs]     # reorder h
     h = torch.cat([
         model.emb['nid'](cuda(torch.arange(0, n_users).long() + 1)),
         h], 0)

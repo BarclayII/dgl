@@ -17,7 +17,7 @@ namespace network {
 // TODO(chao): make these numbers configurable
 
 // Each single message cannot larger than 300 MB
-const int64_t kMaxBufferSize = 300 * 1024 * 2014;
+const int64_t kMaxBufferSize = 300 * 1024 * 1024;
 // Size of message queue is 1 GB
 const int64_t kQueueSize = 1024 * 1024 * 1024;
 // Maximal try count of connection
