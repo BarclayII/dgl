@@ -63,6 +63,9 @@ if args.dataset == 'movielens':
 else:
     neighbors = []
 
+if args.dataset == 'cikm':
+    ml.query_tokens = cuda(ml.query_tokens)
+
 _compute_validation = {
         'movielens': compute_validation_ml,
         'reddit': compute_validation_ml,
@@ -123,18 +126,7 @@ def forward(model, nodeflow, train=True):
             return model(nodeflow, None)
 
 
-def find_negs(dst, ml, neighbors, hard_neg_prob, n_negs):
-    dst_neg = []
-    for i in range(len(dst)):
-        if np.random.rand() < hard_neg_prob:
-            nb = torch.LongTensor(neighbors[dst[i].item()])
-            mask = ~(g.has_edges_between(nb, src[i].item()).byte())
-            dst_neg.append(np.random.choice(nb[mask].numpy(), n_negs))
-        else:
-            dst_neg.append(np.random.randint(
-                len(ml.user_ids), len(ml.user_ids) + len(ml.product_ids), n_negs))
-    dst_neg = torch.LongTensor(dst_neg)
-    return dst_neg
+train_sampler = NodeFlowReceiver(5902)
 
 def runtrain(g_prior_edges, g_train_edges, train):
     global opt
@@ -152,80 +144,8 @@ def runtrain(g_prior_edges, g_train_edges, train):
         item_query_src, item_query_dst = g.find_edges(list(range(len(ml.ratings) * 2, g.number_of_edges())))
         g_prior.add_edges(item_query_src, item_query_dst)
 
-    # prepare seed nodes
-    edge_shuffled = g_train_edges[torch.randperm(g_train_edges.shape[0])]
-    src, dst = g.find_edges(edge_shuffled)
-    dst_neg = find_negs(dst, ml, neighbors, hard_neg_prob, n_negs)
-    # expand if we have multiple negative products for each training pair
-    dst = dst.view(-1, 1).expand_as(dst_neg).flatten()
-    src = src.view(-1, 1).expand_as(dst_neg).flatten()
-    dst_neg = dst_neg.flatten()
-    # Check whether these nodes have predecessors in *prior* graph.  Filter out
-    # those who don't.
-    mask = (g_prior.in_degrees(dst_neg) > 0) & \
-           (g_prior.in_degrees(dst) > 0) & \
-           (g_prior.in_degrees(src) > 0)
-    src = src[mask]
-    dst = dst[mask]
-    dst_neg = dst_neg[mask]
-    edge_shuffled = edge_shuffled[mask]
-    # Chop the users, items and negative items into batches and reorganize
-    # them into seed nodes.
-    # Note that the batch size of DGL sampler here is 3 times our batch size,
-    # since the sampler is handling 3 nodes per training example.
-    edge_batches = edge_shuffled.split(batch_size)
-    src_batches = src.split(batch_size)
-    dst_batches = dst.split(batch_size)
-    dst_neg_batches = dst_neg.split(batch_size)
-
-    if args.dataset == 'cikm':
-        anonymous_indices = torch.LongTensor(np.random.permutation(len(ml.anonymous_ratings)))
-        anonymous_dst_mask = np.isin(
-                ml.anonymous_ratings.iloc[anonymous_indices.numpy()]['product_id'].values,
-                np.array(ml.product_ids))
-        anonymous_dst_mask = torch.ByteTensor(anonymous_dst_mask)
-        anonymous_indices = anonymous_indices[anonymous_dst_mask]
-        anonymous_product_id = ml.anonymous_ratings.iloc[anonymous_indices.numpy()]['product_id'].values
-        num_users = len(ml.user_ids)
-        dst = [num_users + ml.product_ids_invmap[i]
-               for i in anonymous_product_id]
-        dst = torch.LongTensor(dst)
-        dst_neg = find_negs(dst, ml, neighbors, hard_neg_prob, n_negs)
-
-        dst = dst.view(-1, 1).expand_as(dst_neg).flatten()
-        dst_neg = dst_neg.flatten()
-
-        mask = (g_prior.in_degrees(dst_neg) > 0) & (g_prior.in_degrees(dst) > 0)
-        dst = dst[mask]
-        dst_neg = dst_neg[mask]
-        anonymous_indices = anonymous_indices[mask]
-
-        anonymous_dst_batches = dst.split(batch_size)
-        anonymous_dst_neg_batches = dst_neg.split(batch_size)
-        anonymous_batches = anonymous_indices.split(batch_size)
-
-    seed_nodes = []
-    for i in range(len(src_batches)):
-        seed_nodes.append(src_batches[i])
-        seed_nodes.append(dst_batches[i])
-        seed_nodes.append(dst_neg_batches[i])
-        if args.dataset == 'cikm':
-            seed_nodes.append(anonymous_dst_batches[i])
-            seed_nodes.append(anonymous_dst_neg_batches[i])
-    seed_nodes = torch.cat(seed_nodes)
-
-    sampler = PPRBipartiteSingleSidedNeighborSampler(
-            g_prior,
-            batch_size * (3 if args.dataset != 'cikm' else 5),
-            n_layers + 1,
-            10,
-            20,
-            seed_nodes=seed_nodes,
-            restart_prob=0.5,
-            prefetch=True,
-            add_self_loop=True,
-            num_workers=20)
-    sampler_iter = iter(sampler)
+    train_sampler.set_parent_graph(g_prior)
+    train_sampler_iter = iter(train_sampler)
 
     with tqdm.trange(len(src_batches)) as tq:
         sum_loss = 0
@@ -236,19 +156,14 @@ def runtrain(g_prior_edges, g_train_edges, train):
             # SAMPLING PROCESS BEGIN
             # find the source nodes (users), destination nodes (positive products), and
             # negative destination nodes (negative products) in *original* graph.
-            edges = edge_batches[batch_id]
-            src = src_batches[batch_id]
-            dst = dst_batches[batch_id]
-            dst_neg = dst_neg_batches[batch_id]
-
+            nodeflow, aux_data = next(train_sampler)
+            edges, src, dst, dst_neg = aux_data[:4]
             src_size = dst_size = dst_neg_size = src.shape[0]
             count += src_size
 
             if args.dataset == 'cikm':
                 # train an additional batch of anonymous queries
-                row_indices = anonymous_batches[batch_id].numpy()
-                anonymous_dst = anonymous_dst_batches[batch_id]
-                anonymous_dst_neg = anonymous_dst_neg_batches[batch_id]
+                row_indices, anonymous_dst, anonymous_dst_neg = aux_data[4:7]
                 anon_dst_size = anon_dst_neg_size = anonymous_dst.shape[0]
                 count += anon_dst_size
 
@@ -322,7 +237,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
 
     return avg_loss, avg_acc
 
-valid_sampler = NodeFlowReceiver(5050)
+valid_sampler = NodeFlowReceiver(5901)
 
 def runtest(g_prior_edges, validation=True):
     model.eval()
@@ -355,21 +270,13 @@ def runtest(g_prior_edges, validation=True):
                 auxs.append(torch.LongTensor(aux_data))
     h = torch.cat(hs, 0)
     auxs = torch.cat(auxs, 0)
+    assert (np.sort(auxs.numpy()) == np.arange(n_items)).all()
     h = h[auxs]     # reorder h
     h = torch.cat([
         model.emb['nid'](cuda(torch.arange(0, n_users).long() + 1)),
         h], 0)
 
     return compute_validation(ml, h, model)
-
-
-def refresh_mask():
-    ml.refresh_mask()
-    g_prior_edges = g.filter_edges(lambda edges: edges.data['prior'])
-    g_train_edges = g.filter_edges(lambda edges: edges.data['train'] & ~edges.data['inv'])
-    g_prior_train_edges = g.filter_edges(
-            lambda edges: edges.data['prior'] | edges.data['train'])
-    return g_prior_edges, g_train_edges, g_prior_train_edges
 
 
 def train():

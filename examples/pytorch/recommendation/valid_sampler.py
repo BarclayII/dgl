@@ -70,6 +70,15 @@ batch_size = 16
 n_users = len(ml.user_ids)
 n_items = len(ml.product_ids)
 
+
+def refresh_mask():
+    ml.refresh_mask()
+    g_prior_edges = g.filter_edges(lambda edges: edges.data['prior'])
+    g_train_edges = g.filter_edges(lambda edges: edges.data['train'] & ~edges.data['inv'])
+    g_prior_train_edges = g.filter_edges(
+            lambda edges: edges.data['prior'] | edges.data['train'])
+    return g_prior_edges, g_train_edges, g_prior_train_edges
+
 cache_mask_file = cache_file + '.mask'
 if os.path.exists(cache_mask_file):
     with open(cache_mask_file, 'rb') as f:
@@ -87,7 +96,7 @@ if args.dataset == 'cikm':
     item_query_src, item_query_dst = g.find_edges(list(range(len(ml.ratings) * 2, g.number_of_edges())))
     g_prior.add_edges(item_query_src, item_query_dst)
 
-sender = NodeFlowSender('localhost', 5050)
+sender = NodeFlowSender('localhost', 5901)
 seeds = torch.arange(n_users, n_users + n_items).long()
 
 for epoch in range(500):

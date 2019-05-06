@@ -4,11 +4,21 @@ import io
 import pickle
 import numpy as np
 import selectors
+import errno
+import time
 
 def _recvall(s, n, return_fd):
     bio = io.BytesIO()
     while bio.tell() < n:
-        packet = s.recv(n - bio.tell())
+        try:
+            packet = s.recv(n - bio.tell())
+        except socket.error as e:
+            err = e.args[0]
+            if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
+                time.sleep(0.05)
+                continue
+            else:
+                raise e
         if not packet:
             raise IOError('Expected %d bytes, got %d' % (n, bio.tell()))
         bio.write(packet)
@@ -49,6 +59,7 @@ class NodeFlowReceiver(object):
     def _read(self, s, mask):
         aux_buffer_len, nf_buffer_len = np.frombuffer(_recvall(s, 8, False), dtype='int32')
         if aux_buffer_len == 0 and nf_buffer_len == 0:
+            print('Closing socket %s' % s)
             self.sel.unregister(s)
             s.close()
             return None, None

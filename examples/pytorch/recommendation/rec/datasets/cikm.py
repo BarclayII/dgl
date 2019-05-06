@@ -6,7 +6,6 @@ import os
 import tqdm
 from functools import partial
 from .base import UserProductDataset
-from ..utils import cuda
 
 def get_token_list(df, old_field, new_field):
     df[new_field] = (
@@ -198,7 +197,7 @@ class CIKM(UserProductDataset):
         tokens = torch.LongTensor(np.array(self.ratings['tokens'].tolist()))
         tokens = torch.cat([torch.zeros(1, tokens.shape[1]).long(), tokens], 0)
         category = torch.LongTensor(self.ratings['categoryId'].to_numpy())
-        self.query_tokens = cuda(tokens)
+        self.query_tokens = tokens
 
         # NOTE: 'tokens' and 'category' do not take part in computation of
         # user/item node embeddings; they join after PinSage computation
