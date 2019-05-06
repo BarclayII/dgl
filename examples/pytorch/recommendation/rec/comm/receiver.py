@@ -78,6 +78,6 @@ class NodeFlowReceiver(object):
                     if nf is not None:
                         yield nf, aux_data
             print('timeout reached')
-        finally:
+        except:
             print('closing selector')
             self.sel.close()
