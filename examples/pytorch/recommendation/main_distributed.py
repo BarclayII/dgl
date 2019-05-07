@@ -307,15 +307,6 @@ def train():
             pickle.dump((g_prior_edges, g_train_edges, g_prior_train_edges), f)
 
     for epoch in range(500):
-        print('Epoch %d train' % epoch)
-        runtrain(g_prior_edges, g_train_edges, True)
-
-        if epoch == args.sgd_switch:
-            opt = torch.optim.SGD(model.parameters(), lr=0.6)
-            sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda['decay'])
-        elif epoch < args.sgd_switch:
-            sched.step()
-
         print('Epoch %d validation' % epoch)
         if 1:
             with torch.no_grad():
@@ -328,6 +319,15 @@ def train():
             with torch.no_grad():
                 test_mrr = runtest(g_prior_train_edges, False)
             print(pd.Series(test_mrr).describe())
+
+        print('Epoch %d train' % epoch)
+        runtrain(g_prior_edges, g_train_edges, True)
+
+        if epoch == args.sgd_switch:
+            opt = torch.optim.SGD(model.parameters(), lr=0.6)
+            sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda['decay'])
+        elif epoch < args.sgd_switch:
+            sched.step()
 
 
 if __name__ == '__main__':

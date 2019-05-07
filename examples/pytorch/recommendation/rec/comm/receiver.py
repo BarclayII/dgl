@@ -78,6 +78,7 @@ class NodeFlowReceiver(object):
     def __iter__(self):
         try:
             completed = 0
+            print('Number of senders:', len(self.senders))
             while completed < len(self.senders):
                 events = self.sel.select()
                 for key, mask in events:

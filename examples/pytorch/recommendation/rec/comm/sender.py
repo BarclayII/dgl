@@ -40,4 +40,4 @@ class NodeFlowSender(object):
         return data
 
     def complete(self):
-        self.socket.sendall(np.array([0, 0]).tobytes())
+        self.socket.sendall(np.array([0, 0], dtype='int32').tobytes())

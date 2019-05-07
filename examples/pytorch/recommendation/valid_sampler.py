@@ -121,4 +121,5 @@ for epoch in range(500):
             sender.send(
                     nodeflow,
                     seeds[i * batch_size:(i + 1) * batch_size].numpy() - n_users)
+    print('Completing')
     sender.complete()
