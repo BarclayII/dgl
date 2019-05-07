@@ -39,6 +39,5 @@ class NodeFlowSender(object):
             data = pickle.load(bio)
         return data
 
-    def close(self):
+    def complete(self):
         self.socket.sendall(np.array([0, 0]).tobytes())
-        self.socket.close()

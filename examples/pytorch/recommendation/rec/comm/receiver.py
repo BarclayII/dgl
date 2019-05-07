@@ -39,9 +39,7 @@ class NodeFlowReceiver(object):
     def _read(self, s, mask):
         aux_buffer_len, nf_buffer_len = np.frombuffer(recvall(s, 8, False), dtype='int32')
         if aux_buffer_len == 0 and nf_buffer_len == 0:
-            print('Closing socket %s' % s)
-            self.sel.unregister(s)
-            s.close()
+            print('Socket %s finished' % s)
             return None, None
 
         with recvall(s, aux_buffer_len, True) as bio:
@@ -79,14 +77,17 @@ class NodeFlowReceiver(object):
 
     def __iter__(self):
         try:
-            while True:
+            completed = 0
+            while completed < len(self.senders):
                 events = self.sel.select()
                 for key, mask in events:
                     callback = key.data
                     nf, aux_data = callback(key.fileobj, mask)
                     if nf is not None:
                         yield nf, aux_data
-            print('timeout reached')
+                    else:
+                        completed += 1
+            print('Iter finished')
         except Exception as e:
             raise e
             print('closing selector')

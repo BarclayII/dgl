@@ -146,23 +146,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
         g_prior.add_edges(item_query_src, item_query_dst)
 
     edge_shuffled = torch.randperm(g_train_edges.shape[0])
-    src, dst = g.find_edges(edge_shuffled)
-    dst_neg = find_negs(dst, ml, neighbors, hard_neg_prob, n_negs)
-    # expand if we have multiple negative products for each training pair
-    dst = dst.view(-1, 1).expand_as(dst_neg).flatten()
-    src = src.view(-1, 1).expand_as(dst_neg).flatten()
-    dst_neg = dst_neg.flatten()
-    # Check whether these nodes have predecessors in *prior* graph.  Filter out
-    # those who don't.
-    mask = (g_prior.in_degrees(dst_neg) > 0) & \
-           (g_prior.in_degrees(dst) > 0) & \
-           (g_prior.in_degrees(src) > 0)
-    src = src[mask]
-    dst = dst[mask]
-    dst_neg = dst_neg[mask]
-    edge_shuffled = edge_shuffled[mask]
-
-    n_batches = sum(len(b.split(batch_size)) for b in edge_shuffled.split(4))
+    n_batches = len(edge_shuffled.split(batch_size))
     train_sampler.distribute(edge_shuffled.numpy())
     if args.dataset == 'cikm':
         anonymous_indices = np.random.permutation(len(ml.anonymous_ratings))
@@ -171,16 +155,15 @@ def runtrain(g_prior_edges, g_train_edges, train):
     train_sampler.set_parent_graph(g_prior)
     train_sampler_iter = iter(train_sampler)
 
-    with tqdm.trange(n_batches) as tq:
+    with tqdm.trange(train_sampler_iter) as tq:
         sum_loss = 0
         sum_acc = 0
         count = 0
-        for batch_id in tq:
+        for batch_id, (nodeflow, aux_data) in enumerate(tq):
             # TODO: got stuck on making this sampling process distributed...
             # SAMPLING PROCESS BEGIN
             # find the source nodes (users), destination nodes (positive products), and
             # negative destination nodes (negative products) in *original* graph.
-            nodeflow, aux_data = next(train_sampler_iter)
             edges, src, dst, dst_neg = aux_data[:4]
             edges = torch.LongTensor(edges)
             src = torch.LongTensor(src)
@@ -263,6 +246,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
                             'avg_loss': '%.3f' % avg_loss,
                             'avg_acc': '%.3f' % avg_acc,
                             'grad_norm': '%.6f' % np.sqrt(grad_sqr_norm)})
+            tq.update()
 
     return avg_loss, avg_acc
 
@@ -291,9 +275,8 @@ def runtest(g_prior_edges, validation=True):
     hs = []
     auxs = []
     with torch.no_grad():
-        with tqdm.trange((n_items + batch_size - 1) // batch_size) as tq:
-            for _ in tq:
-                nodeflow, aux_data = next(valid_sampler_iter)
+        with tqdm.tqdm(valid_sampler_iter) as tq:
+            for nodeflow, aux_data in tq:
                 nodeflow.copy_from_parent()
                 cast_ppr_weight(nodeflow)
                 h = forward(model, nodeflow, False)
