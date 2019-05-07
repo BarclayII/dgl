@@ -153,7 +153,7 @@ for epoch in range(500):
         anonymous_dst_mask = np.isin(
                 ml.anonymous_ratings.iloc[anonymous_indices.numpy()]['product_id'].values,
                 np.array(ml.product_ids))
-        anonymous_dst_mask = torch.ByteTensor(anonymous_dst_mask)
+        anonymous_dst_mask = torch.ByteTensor(anonymous_dst_mask.astype('uint8'))
         anonymous_indices = anonymous_indices[anonymous_dst_mask]
         anonymous_product_id = ml.anonymous_ratings.iloc[anonymous_indices.numpy()]['product_id'].values
         num_users = len(ml.user_ids)

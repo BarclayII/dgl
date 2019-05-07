@@ -102,7 +102,7 @@ sender = NodeFlowSender(args.host, args.port)
 #seeds = torch.arange(n_users, n_users + n_items).long()
 
 for epoch in range(500):
-    seeds = torch.LongTensor(sender.recv())
+    seeds = torch.LongTensor(sender.recv()) + n_users
     sampler = PPRBipartiteSingleSidedNeighborSampler(
             g_prior,
             batch_size,
@@ -114,7 +114,7 @@ for epoch in range(500):
             prefetch=False,
             add_self_loop=True,
             shuffle=False,
-            num_workers=20)
+            num_workers=25)
 
     with tqdm.tqdm(sampler) as tq:
         for i, nodeflow in enumerate(tq):
