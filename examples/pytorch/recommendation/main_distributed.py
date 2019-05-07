@@ -155,7 +155,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
     train_sampler.set_parent_graph(g_prior)
     train_sampler_iter = iter(train_sampler)
 
-    with tqdm.trange(train_sampler_iter) as tq:
+    with tqdm.tqdm(train_sampler_iter) as tq:
         sum_loss = 0
         sum_acc = 0
         count = 0
@@ -308,6 +308,16 @@ def train():
 
     for epoch in range(500):
         print('Epoch %d validation' % epoch)
+
+        print('Epoch %d train' % epoch)
+        runtrain(g_prior_edges, g_train_edges, True)
+
+        if epoch == args.sgd_switch:
+            opt = torch.optim.SGD(model.parameters(), lr=0.6)
+            sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda['decay'])
+        elif epoch < args.sgd_switch:
+            sched.step()
+
         if 1:
             with torch.no_grad():
                 valid_mrr = runtest(g_prior_train_edges, True)
@@ -319,15 +329,6 @@ def train():
             with torch.no_grad():
                 test_mrr = runtest(g_prior_train_edges, False)
             print(pd.Series(test_mrr).describe())
-
-        print('Epoch %d train' % epoch)
-        runtrain(g_prior_edges, g_train_edges, True)
-
-        if epoch == args.sgd_switch:
-            opt = torch.optim.SGD(model.parameters(), lr=0.6)
-            sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda['decay'])
-        elif epoch < args.sgd_switch:
-            sched.step()
 
 
 if __name__ == '__main__':
