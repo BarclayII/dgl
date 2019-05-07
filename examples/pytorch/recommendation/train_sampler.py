@@ -218,3 +218,4 @@ for epoch in range(500):
                      row_indices,
                      anonymous_dst.numpy(),
                      anonymous_dst_neg.numpy()))
+    sender.complete()

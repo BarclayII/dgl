@@ -127,7 +127,7 @@ def forward(model, nodeflow, train=True):
 
 
 train_sampler = NodeFlowReceiver(5902)
-train_sampler.waitfor(1)
+train_sampler.waitfor(4)
 
 def runtrain(g_prior_edges, g_train_edges, train):
     global opt
@@ -155,16 +155,15 @@ def runtrain(g_prior_edges, g_train_edges, train):
     train_sampler.set_parent_graph(g_prior)
     train_sampler_iter = iter(train_sampler)
 
-    with tqdm.trange(n_batches) as tq:
+    with tqdm.trange(train_sampler_iter) as tq:
         sum_loss = 0
         sum_acc = 0
         count = 0
-        for batch_id in tq:
+        for batch_id, (nodeflow, aux_data) in enumerate(tq):
             # TODO: got stuck on making this sampling process distributed...
             # SAMPLING PROCESS BEGIN
             # find the source nodes (users), destination nodes (positive products), and
             # negative destination nodes (negative products) in *original* graph.
-            nodeflow, aux_data = next(train_sampler_iter)
             edges, src, dst, dst_neg = aux_data[:4]
             edges = torch.LongTensor(edges)
             src = torch.LongTensor(src)
@@ -247,11 +246,12 @@ def runtrain(g_prior_edges, g_train_edges, train):
                             'avg_loss': '%.3f' % avg_loss,
                             'avg_acc': '%.3f' % avg_acc,
                             'grad_norm': '%.6f' % np.sqrt(grad_sqr_norm)})
+            tq.update()
 
     return avg_loss, avg_acc
 
 valid_sampler = NodeFlowReceiver(5901)
-#valid_sampler.waitfor(4)
+valid_sampler.waitfor(4)
 
 def runtest(g_prior_edges, validation=True):
     model.eval()
@@ -275,9 +275,8 @@ def runtest(g_prior_edges, validation=True):
     hs = []
     auxs = []
     with torch.no_grad():
-        with tqdm.trange((n_items + batch_size - 1) // batch_size) as tq:
-            for _ in tq:
-                nodeflow, aux_data = next(valid_sampler_iter)
+        with tqdm.tqdm(valid_sampler_iter) as tq:
+            for nodeflow, aux_data in tq:
                 nodeflow.copy_from_parent()
                 cast_ppr_weight(nodeflow)
                 h = forward(model, nodeflow, False)
@@ -308,8 +307,17 @@ def train():
             pickle.dump((g_prior_edges, g_train_edges, g_prior_train_edges), f)
 
     for epoch in range(500):
+        print('Epoch %d train' % epoch)
+        runtrain(g_prior_edges, g_train_edges, True)
+
+        if epoch == args.sgd_switch:
+            opt = torch.optim.SGD(model.parameters(), lr=0.6)
+            sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda['decay'])
+        elif epoch < args.sgd_switch:
+            sched.step()
+
         print('Epoch %d validation' % epoch)
-        if 0:
+        if 1:
             with torch.no_grad():
                 valid_mrr = runtest(g_prior_train_edges, True)
                 if best_mrr < valid_mrr.mean():
@@ -320,15 +328,6 @@ def train():
             with torch.no_grad():
                 test_mrr = runtest(g_prior_train_edges, False)
             print(pd.Series(test_mrr).describe())
-
-        print('Epoch %d train' % epoch)
-        runtrain(g_prior_edges, g_train_edges, True)
-
-        if epoch == args.sgd_switch:
-            opt = torch.optim.SGD(model.parameters(), lr=0.6)
-            sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda['decay'])
-        elif epoch < args.sgd_switch:
-            sched.step()
 
 
 if __name__ == '__main__':
