@@ -127,7 +127,7 @@ def forward(model, nodeflow, train=True):
 
 
 train_sampler = NodeFlowReceiver(5902)
-train_sampler.waitfor(1)
+train_sampler.waitfor(4)
 
 def runtrain(g_prior_edges, g_train_edges, train):
     global opt
@@ -146,7 +146,23 @@ def runtrain(g_prior_edges, g_train_edges, train):
         g_prior.add_edges(item_query_src, item_query_dst)
 
     edge_shuffled = torch.randperm(g_train_edges.shape[0])
-    n_batches = len(edge_shuffled.split(batch_size))
+    src, dst = g.find_edges(edge_shuffled)
+    dst_neg = find_negs(dst, ml, neighbors, hard_neg_prob, n_negs)
+    # expand if we have multiple negative products for each training pair
+    dst = dst.view(-1, 1).expand_as(dst_neg).flatten()
+    src = src.view(-1, 1).expand_as(dst_neg).flatten()
+    dst_neg = dst_neg.flatten()
+    # Check whether these nodes have predecessors in *prior* graph.  Filter out
+    # those who don't.
+    mask = (g_prior.in_degrees(dst_neg) > 0) & \
+           (g_prior.in_degrees(dst) > 0) & \
+           (g_prior.in_degrees(src) > 0)
+    src = src[mask]
+    dst = dst[mask]
+    dst_neg = dst_neg[mask]
+    edge_shuffled = edge_shuffled[mask]
+
+    n_batches = sum(len(b.split(batch_size)) for b in edge_shuffled.split(4))
     train_sampler.distribute(edge_shuffled.numpy())
     if args.dataset == 'cikm':
         anonymous_indices = np.random.permutation(len(ml.anonymous_ratings))
@@ -251,7 +267,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
     return avg_loss, avg_acc
 
 valid_sampler = NodeFlowReceiver(5901)
-#valid_sampler.waitfor(4)
+valid_sampler.waitfor(4)
 
 def runtest(g_prior_edges, validation=True):
     model.eval()
@@ -308,8 +324,17 @@ def train():
             pickle.dump((g_prior_edges, g_train_edges, g_prior_train_edges), f)
 
     for epoch in range(500):
+        print('Epoch %d train' % epoch)
+        runtrain(g_prior_edges, g_train_edges, True)
+
+        if epoch == args.sgd_switch:
+            opt = torch.optim.SGD(model.parameters(), lr=0.6)
+            sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda['decay'])
+        elif epoch < args.sgd_switch:
+            sched.step()
+
         print('Epoch %d validation' % epoch)
-        if 0:
+        if 1:
             with torch.no_grad():
                 valid_mrr = runtest(g_prior_train_edges, True)
                 if best_mrr < valid_mrr.mean():
@@ -320,15 +345,6 @@ def train():
             with torch.no_grad():
                 test_mrr = runtest(g_prior_train_edges, False)
             print(pd.Series(test_mrr).describe())
-
-        print('Epoch %d train' % epoch)
-        runtrain(g_prior_edges, g_train_edges, True)
-
-        if epoch == args.sgd_switch:
-            opt = torch.optim.SGD(model.parameters(), lr=0.6)
-            sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda['decay'])
-        elif epoch < args.sgd_switch:
-            sched.step()
 
 
 if __name__ == '__main__':

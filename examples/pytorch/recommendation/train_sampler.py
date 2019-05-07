@@ -135,6 +135,7 @@ for epoch in range(500):
     mask = (g_prior.in_degrees(dst_neg) > 0) & \
            (g_prior.in_degrees(dst) > 0) & \
            (g_prior.in_degrees(src) > 0)
+    assert (~mask).sum() == 0
     src = src[mask]
     dst = dst[mask]
     dst_neg = dst_neg[mask]
