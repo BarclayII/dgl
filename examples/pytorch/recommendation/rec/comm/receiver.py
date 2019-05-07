@@ -6,7 +6,7 @@ import numpy as np
 import selectors
 import errno
 import time
-from .utils import recvall
+from .utils import recvall, sendall
 
 class NodeFlowReceiver(object):
     def __init__(self, port):
@@ -75,20 +75,19 @@ class NodeFlowReceiver(object):
             with io.BytesIO() as bio:
                 bio.write(np.array([len(buf)], dtype='int32').tobytes())
                 bio.write(buf)
-                s.sendall(bio.getvalue())
+                sendall(s, bio.getvalue())
 
     def __iter__(self):
         try:
             while True:
-                events = self.sel.select(timeout=1200)
-                if not events:
-                    break
+                events = self.sel.select()
                 for key, mask in events:
                     callback = key.data
                     nf, aux_data = callback(key.fileobj, mask)
                     if nf is not None:
                         yield nf, aux_data
             print('timeout reached')
-        except:
+        except Exception as e:
+            raise e
             print('closing selector')
             self.sel.close()

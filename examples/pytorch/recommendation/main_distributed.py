@@ -146,6 +146,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
         g_prior.add_edges(item_query_src, item_query_dst)
 
     edge_shuffled = torch.randperm(g_train_edges.shape[0])
+    n_batches = len(edge_shuffled.split(batch_size))
     train_sampler.distribute(edge_shuffled.numpy())
     if args.dataset == 'cikm':
         anonymous_indices = np.random.permutation(len(ml.anonymous_ratings))
@@ -154,7 +155,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
     train_sampler.set_parent_graph(g_prior)
     train_sampler_iter = iter(train_sampler)
 
-    with tqdm.trange(len(src_batches)) as tq:
+    with tqdm.trange(n_batches) as tq:
         sum_loss = 0
         sum_acc = 0
         count = 0
@@ -163,14 +164,20 @@ def runtrain(g_prior_edges, g_train_edges, train):
             # SAMPLING PROCESS BEGIN
             # find the source nodes (users), destination nodes (positive products), and
             # negative destination nodes (negative products) in *original* graph.
-            nodeflow, aux_data = next(train_sampler)
+            nodeflow, aux_data = next(train_sampler_iter)
             edges, src, dst, dst_neg = aux_data[:4]
+            edges = torch.LongTensor(edges)
+            src = torch.LongTensor(src)
+            dst = torch.LongTensor(dst)
+            dst_neg = torch.LongTensor(dst_neg)
             src_size = dst_size = dst_neg_size = src.shape[0]
             count += src_size
 
             if args.dataset == 'cikm':
                 # train an additional batch of anonymous queries
                 row_indices, anonymous_dst, anonymous_dst_neg = aux_data[4:7]
+                anonymous_dst = torch.LongTensor(anonymous_dst)
+                anonymous_dst_neg = torch.LongTensor(anonymous_dst_neg)
                 anon_dst_size = anon_dst_neg_size = anonymous_dst.shape[0]
                 count += anon_dst_size
 
@@ -178,7 +185,6 @@ def runtrain(g_prior_edges, g_train_edges, train):
             # GCN output of those nodes.
             nodeset = torch.cat([dst, dst_neg] if args.dataset != 'cikm' else
                                 [dst, dst_neg, anonymous_dst, anonymous_dst_neg])
-            nodeflow = next(sampler_iter)
             # SAMPLING PROCESS END
             # copy features from parent graph
             nodeflow.copy_from_parent()
@@ -245,7 +251,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
     return avg_loss, avg_acc
 
 valid_sampler = NodeFlowReceiver(5901)
-valid_sampler.waitfor(1)
+#valid_sampler.waitfor(4)
 
 def runtest(g_prior_edges, validation=True):
     model.eval()
@@ -303,7 +309,7 @@ def train():
 
     for epoch in range(500):
         print('Epoch %d validation' % epoch)
-        if 1:
+        if 0:
             with torch.no_grad():
                 valid_mrr = runtest(g_prior_train_edges, True)
                 if best_mrr < valid_mrr.mean():

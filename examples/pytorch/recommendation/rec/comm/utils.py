@@ -26,3 +26,16 @@ def recvall(s, n, return_fd):
         bio.seek(0)
         return bio
 
+def sendall(s, buf):
+    bytes_sent = 0
+    n = len(buf)
+    while bytes_sent < n:
+        try:
+            sent = s.send(buf[bytes_sent:])
+            bytes_sent += sent
+        except socket.error as e:
+            err = e.args[0]
+            if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
+                continue
+            else:
+                raise e
