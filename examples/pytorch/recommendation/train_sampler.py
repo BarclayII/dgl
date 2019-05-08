@@ -148,40 +148,11 @@ for epoch in range(500):
     dst_batches = dst.split(batch_size)
     dst_neg_batches = dst_neg.split(batch_size)
 
-    if args.dataset == 'cikm':
-        anonymous_indices = torch.LongTensor(sender.recv())
-        anonymous_dst_mask = np.isin(
-                ml.anonymous_ratings.iloc[anonymous_indices.numpy()]['product_id'].values,
-                np.array(ml.product_ids))
-        anonymous_dst_mask = torch.ByteTensor(anonymous_dst_mask.astype('uint8'))
-        anonymous_indices = anonymous_indices[anonymous_dst_mask]
-        anonymous_product_id = ml.anonymous_ratings.iloc[anonymous_indices.numpy()]['product_id'].values
-        num_users = len(ml.user_ids)
-        dst = [num_users + ml.product_ids_invmap[i]
-               for i in anonymous_product_id]
-        dst = torch.LongTensor(dst)
-        dst_neg = find_negs(dst, ml, neighbors, hard_neg_prob, n_negs)
-
-        dst = dst.view(-1, 1).expand_as(dst_neg).flatten()
-        dst_neg = dst_neg.flatten()
-
-        mask = (g_prior.in_degrees(dst_neg) > 0) & (g_prior.in_degrees(dst) > 0)
-        dst = dst[mask]
-        dst_neg = dst_neg[mask]
-        anonymous_indices = anonymous_indices[mask]
-
-        anonymous_dst_batches = dst.split(batch_size)
-        anonymous_dst_neg_batches = dst_neg.split(batch_size)
-        anonymous_batches = anonymous_indices.split(batch_size)
-
     seed_nodes = []
     for i in range(len(src_batches)):
         seed_nodes.append(src_batches[i])
         seed_nodes.append(dst_batches[i])
         seed_nodes.append(dst_neg_batches[i])
-        if args.dataset == 'cikm':
-            seed_nodes.append(anonymous_dst_batches[i])
-            seed_nodes.append(anonymous_dst_neg_batches[i])
     seed_nodes = torch.cat(seed_nodes)
 
     sampler = PPRBipartiteSingleSidedNeighborSampler(
@@ -203,19 +174,11 @@ for epoch in range(500):
             src = src_batches[batch_id]
             dst = dst_batches[batch_id]
             dst_neg = dst_neg_batches[batch_id]
-            if args.dataset == 'cikm':
-                # train an additional batch of anonymous queries
-                row_indices = anonymous_batches[batch_id].numpy()
-                anonymous_dst = anonymous_dst_batches[batch_id]
-                anonymous_dst_neg = anonymous_dst_neg_batches[batch_id]
 
             sender.send(
                     nodeflow,
                     (edges.numpy(),
                      src.numpy(),
                      dst.numpy(),
-                     dst_neg.numpy(),
-                     row_indices,
-                     anonymous_dst.numpy(),
-                     anonymous_dst_neg.numpy()))
+                     dst_neg.numpy()))
     sender.complete()

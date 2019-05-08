@@ -148,9 +148,6 @@ def runtrain(g_prior_edges, g_train_edges, train):
     edge_shuffled = torch.randperm(g_train_edges.shape[0])
     n_batches = len(edge_shuffled.split(batch_size))
     train_sampler.distribute(edge_shuffled.numpy())
-    if args.dataset == 'cikm':
-        anonymous_indices = np.random.permutation(len(ml.anonymous_ratings))
-        train_sampler.distribute(anonymous_indices)
 
     train_sampler.set_parent_graph(g_prior)
     train_sampler_iter = iter(train_sampler)
@@ -172,18 +169,9 @@ def runtrain(g_prior_edges, g_train_edges, train):
             src_size = dst_size = dst_neg_size = src.shape[0]
             count += src_size
 
-            if args.dataset == 'cikm':
-                # train an additional batch of anonymous queries
-                row_indices, anonymous_dst, anonymous_dst_neg = aux_data[4:7]
-                anonymous_dst = torch.LongTensor(anonymous_dst)
-                anonymous_dst_neg = torch.LongTensor(anonymous_dst_neg)
-                anon_dst_size = anon_dst_neg_size = anonymous_dst.shape[0]
-                count += anon_dst_size
-
             # Generate a NodeFlow given the sources/destinations/negative destinations.  We need
             # GCN output of those nodes.
-            nodeset = torch.cat([dst, dst_neg] if args.dataset != 'cikm' else
-                                [dst, dst_neg, anonymous_dst, anonymous_dst_neg])
+            nodeset = torch.cat([dst, dst_neg])
             # SAMPLING PROCESS END
             # copy features from parent graph
             nodeflow.copy_from_parent()
@@ -194,11 +182,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
             node_output = forward(model, nodeflow, train)
             output_idx = nodeflow.map_from_parent_nid(-1, nodeset)
             h = node_output[output_idx]
-            if args.dataset != 'cikm':
-                h_dst, h_dst_neg = h.split([dst_size, dst_neg_size])
-            else:
-                h_dst, h_dst_neg, h_anon_dst, h_anon_dst_neg = h.split(
-                        [dst_size, dst_neg_size, anon_dst_size, anon_dst_neg_size])
+            h_dst, h_dst_neg = h.split([dst_size, dst_neg_size])
             h_src = model.emb['nid'](cuda(g.nodes[src].data['nid']))
 
             # For CIKM, add query/category embeddings to user embeddings.
@@ -210,18 +194,6 @@ def runtrain(g_prior_edges, g_train_edges, train):
                 h_tokens = model.emb['tokens'](tokens).mean(1)
                 h_category = model.emb['category'](category)
                 h_src = h_src + h_tokens + h_category
-
-                h_dst = torch.cat([h_dst, h_anon_dst])
-                h_dst_neg = torch.cat([h_dst_neg, h_anon_dst_neg])
-
-                tokens = ml.anonymous_ratings.iloc[row_indices]['tokens'].tolist()
-                tokens = cuda(torch.LongTensor(tokens))
-                category = ml.anonymous_ratings.iloc[row_indices]['categoryId'].tolist()
-                category = cuda(torch.LongTensor(category))
-                h_tokens = model.emb['tokens'](tokens).mean(1)
-                h_category = model.emb['category'](category)
-                h_anon_src = h_tokens + h_category
-                h_src = torch.cat([h_src, h_anon_src])
 
             diff = (h_src * (h_dst_neg - h_dst)).sum(1)
             loss = loss_func[args.loss](diff)

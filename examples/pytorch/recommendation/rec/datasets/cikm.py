@@ -73,6 +73,15 @@ class CIKM(UserProductDataset):
         # Product description
         # Product category
 
+        # For an anonymous user we assume that they are new
+        max_user_id = max(
+                train_purchases['userId'].max(),
+                train_item_views['userId'].max(),
+                train_queries['userId'].max())
+        train_purchases.fillna({'userId': train_purchases['sessionId'] + max_user_id}, inplace=True)
+        train_item_views.fillna({'userId': train_purchases['sessionId'] + max_user_id}, inplace=True)
+        train_queries.fillna({'userId': train_purchases['sessionId'] + max_user_id}, inplace=True)
+
         # merge users that ever appeared in the same session
         session_user_mapping = pd.concat([
             train_purchases[['sessionId', 'userId']],
@@ -143,7 +152,6 @@ class CIKM(UserProductDataset):
         self.train_queries_with_clicks = train_queries_with_clicks
         self.train_purchases = train_purchases
         self.train_item_views = train_item_views
-        self.anonymous_ratings = self.ratings_with_session[self.ratings_with_session['user_id'].isnull()]
 
     def build_graph(self):
         # The graph consists of user nodes, item nodes, and query nodes.
