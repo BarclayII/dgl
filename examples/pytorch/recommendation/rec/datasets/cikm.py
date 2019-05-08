@@ -79,8 +79,8 @@ class CIKM(UserProductDataset):
                 train_item_views['userId'].max(),
                 train_queries['userId'].max())
         train_purchases.fillna({'userId': train_purchases['sessionId'] + max_user_id}, inplace=True)
-        train_item_views.fillna({'userId': train_purchases['sessionId'] + max_user_id}, inplace=True)
-        train_queries.fillna({'userId': train_purchases['sessionId'] + max_user_id}, inplace=True)
+        train_item_views.fillna({'userId': train_item_views['sessionId'] + max_user_id}, inplace=True)
+        train_queries.fillna({'userId': train_queries['sessionId'] + max_user_id}, inplace=True)
 
         # merge users that ever appeared in the same session
         session_user_mapping = pd.concat([
