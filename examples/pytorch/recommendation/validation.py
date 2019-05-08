@@ -39,12 +39,12 @@ def compute_validation_ml(ml, h, model):
     return np.array(rr)
 
 
-def compute_validation_cikm(ml, h, model):
+def compute_validation_cikm(ml, h, model, test):
     rr = []
-    outfile = open('submission.txt', 'w')
+    outfile = open('submission.txt' if test else 'verify.txt', 'w')
 
     with torch.no_grad():
-        queries = ml.test_queries
+        queries = ml.test_queries if test else ml.train_queries_with_clicks
         with tqdm.tqdm(queries.iterrows()) as tq:
             for idx, row in tq:
                 uid = row['userId']
@@ -59,10 +59,13 @@ def compute_validation_cikm(ml, h, model):
                     h_src = 0
                 else:
                     if int(uid) not in ml.user_ids_invmap:
-                        print('WARNING: %d not showing up in ml.user_ids_invmap' % uid)
-                        continue
-                    uid = ml.user_ids_invmap[int(uid)]
-                    h_src = h[uid]
+                        print('%d: %d not showing up in ml.user_ids_invmap' % (row['queryId'], uid))
+                        h_src = 0
+                    else:
+                        uid = ml.user_ids_invmap[int(uid)]
+                        h_src = h[uid]
+                if len(unknown_items) > 0:
+                    print('%d: unknown items %s' % (row['queryId'], unknown_items))
 
                 if isinstance(row['searchstring.tokens'], str):     # i.e. not nan
                     tokens = cuda(torch.LongTensor(

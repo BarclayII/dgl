@@ -110,7 +110,7 @@ class CIKM(UserProductDataset):
 
         self.users = pd.DataFrame({'id': ratings['userId'].unique()}).set_index('id')
         self.products = pd.DataFrame(
-                {'itemId': list(set(ratings['itemId']) | set(self.query_candidates['product_id']))}
+                {'itemId': list(set(ratings_with_session['itemId']) | set(self.query_candidates['product_id']))}
                 ).set_index('itemId')
         self.products = (
                 self.products
