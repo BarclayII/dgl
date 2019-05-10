@@ -157,7 +157,7 @@ for epoch in range(500):
 
     sampler = PPRBipartiteSingleSidedNeighborSampler(
             g_prior,
-            batch_size * (3 if args.dataset != 'cikm' else 5),
+            batch_size * 3,
             n_layers + 1,
             10,
             20,

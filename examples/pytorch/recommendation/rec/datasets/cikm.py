@@ -7,13 +7,14 @@ import tqdm
 from functools import partial
 from .base import UserProductDataset
 
-def get_token_list(df, old_field, new_field):
+def get_token_list(df, old_field, new_field, pad):
     df[new_field] = (
             df[old_field].str
             .split(',')
-            .map(lambda x: [(int(i) + 1) if i != '' else 0 for i in x]))
+            .map(lambda x: [(int(i) + (1 if pad else 0)) if i != '' else 0 for i in x]))
     max_length = df[new_field].map(len).max()
-    df[new_field] = df[new_field].map(lambda x: x + [0] * (max_length - len(x)))
+    if pad:
+        df[new_field] = df[new_field].map(lambda x: x + [0] * (max_length - len(x)))
 
 def merge_users(session_user_mapping):
     session_user_mapping = session_user_mapping.dropna(subset=['userId'])
@@ -108,14 +109,18 @@ class CIKM(UserProductDataset):
                 .astype({'categoryId': 'int64'}))
         ratings = ratings_with_session.drop('sessionId', axis=1).drop_duplicates()
         ratings = ratings.dropna(subset=['userId'])
-        get_token_list(ratings_with_session, 'searchstring.tokens', 'tokens')
-        get_token_list(ratings, 'searchstring.tokens', 'tokens')
+        get_token_list(ratings_with_session, 'searchstring.tokens', 'tokens', True)
+        get_token_list(ratings, 'searchstring.tokens', 'tokens', True)
 
-        get_token_list(train_queries_with_clicks, 'items', 'itemList')
+        get_token_list(train_queries_with_clicks, 'items', 'itemList', False)
         query_candidates = []
+        query_ids = []
         for index, row in tqdm.tqdm(train_queries_with_clicks.iterrows()):
-            query_candidates.extend((row['queryId'], item) for item in row['itemList'])
-        self.query_candidates = pd.DataFrame(columns=['query_id', 'product_id'], data=query_candidates).drop_duplicates()
+            query_candidates.append(row['itemList'])
+            query_ids.append([row['queryId']] * len(row['itemList']))
+        query_candidates = np.concatenate(query_candidates)
+        query_ids = np.concatenate(query_ids)
+        self.query_candidates = pd.DataFrame({'query_id': query_ids, 'product_id': query_candidates}).drop_duplicates()
 
         self.users = pd.DataFrame({'id': ratings['userId'].unique()}).set_index('id')
         self.products = pd.DataFrame(
@@ -131,7 +136,7 @@ class CIKM(UserProductDataset):
         assert self.products['product.name.tokens'].notnull().all()
         assert self.products['categoryId'].notnull().all()
 
-        get_token_list(self.products, 'product.name.tokens', 'tokens')
+        get_token_list(self.products, 'product.name.tokens', 'tokens', True)
 
         ratings = ratings.rename({'userId': 'user_id', 'itemId': 'product_id'}, axis=1)
         ratings_with_session = ratings_with_session.rename({'userId': 'user_id', 'itemId': 'product_id'}, axis=1)
