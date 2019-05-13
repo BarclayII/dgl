@@ -32,6 +32,8 @@ parser.add_argument('--hard-neg-prob', type=float, default=0,
 parser.add_argument('--cache', type=str, default='/tmp/dataset.pkl',
                     help='File to cache the postprocessed dataset object')
 parser.add_argument('--dataset', type=str, default='movielens')
+parser.add_argument('--train-port', type=int, default=5902)
+parser.add_argument('--valid-port', type=int, default=5901)
 args = parser.parse_args()
 
 print(args)
@@ -127,7 +129,7 @@ def forward(model, nodeflow, train=True):
             return model(nodeflow, None)
 
 
-train_sampler = NodeFlowReceiver(5902)
+train_sampler = NodeFlowReceiver(args.train_port)
 train_sampler.waitfor(4)
 
 def runtrain(g_prior_edges, g_train_edges, train):
@@ -223,7 +225,7 @@ def runtrain(g_prior_edges, g_train_edges, train):
 
     return avg_loss, avg_acc
 
-valid_sampler = NodeFlowReceiver(5901)
+valid_sampler = NodeFlowReceiver(args.valid_port)
 valid_sampler.waitfor(4)
 
 def runtest(g_prior_edges, validation=True):
