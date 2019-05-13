@@ -95,7 +95,8 @@ loss_func = {
 if args.dataset == 'cikm':
     emb_tokens = nn.Embedding(
             max(g.ndata['tokens'].max().item(), ml.query_tokens.max().item()) + 1,
-            n_hidden)
+            n_hidden,
+            padding_idx=0)
     emb = {'tokens': emb_tokens}
 else:
     emb = {}
