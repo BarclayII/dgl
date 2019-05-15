@@ -85,7 +85,7 @@ class MovieLens(UserProductDataset):
 
         self.ratings = self.data_split(self.ratings)
         self.build_graph()
-        self.find_neighbors(0.2, 2000, 1000)
+        #self.find_neighbors(0.2, 2000, 1000)
 
     def build_graph(self):
         user_ids = list(self.users.index)
@@ -200,3 +200,47 @@ class MovieLens(UserProductDataset):
 
         self.g.edges[self.rating_user_vertices, self.rating_product_vertices].data.update(edge_data)
         self.g.edges[self.rating_product_vertices, self.rating_user_vertices].data.update(edge_data)
+
+
+class MovieLens20M(MovieLens):
+    def __init__(self, directory):
+        self.directory = directory
+
+        ratings = pd.read_csv(os.path.join(directory, 'ratings.csv'))
+        ratings = ratings.rename({'userId': 'user_id', 'movieId': 'productId'}, axis=1)
+
+        self.ratings = ratings
+        self.users = pd.DataFrame({'id': ratings['user_id'].unique()}).set_index('id').astype('category')
+
+        products = []
+        with open(os.path.join(directory, 'movies.dat'), encoding='latin1') as f:
+            for i, l in enumerate(f):
+                if i == 0:
+                    # skip header
+                    continue
+
+                id_, title, genres = l.strip().split(',')
+                genres_set = set(genres.split('|'))
+
+                # extract year
+                assert re.match(r'.*\([0-9]{4}\)$', title)
+                year = title[-5:-1]
+                title = title[:-6].strip()
+
+                data = {'id': int(id_), 'title': title, 'year': year}
+                for g in genres_set:
+                    data[g] = True
+                products.append(data)
+        self.products = (
+                pd.DataFrame(products)
+                .set_index('id')
+                .fillna(False)
+                .astype({'year': 'category'}))
+        self.genres = self.products.columns[self.products.dtypes == bool]
+
+        self.users = self.users[self.users.index.isin(self.ratings['user_id'])]
+        self.products = self.products[self.products.index.isin(self.ratings['product_id'])]
+
+        self.ratings = self.data_split(self.ratings)
+        self.build_graph()
+        #self.find_neighbors(0.2, 2000, 1000)
