@@ -12,6 +12,8 @@ import re
 import tqdm
 import string
 from .base import UserProductDataset
+from functools import reduce
+import operator
 
 class MovieLens(UserProductDataset):
     def __init__(self, directory):
@@ -114,10 +116,11 @@ class MovieLens(UserProductDataset):
         g.ndata['genre'][len(user_ids):len(user_ids) + len(product_ids)] = product_genres
 
         # product year
-        g.ndata['year'] = torch.zeros(g.number_of_nodes(), dtype=torch.int64)
-        # 0 for padding
-        g.ndata['year'][len(user_ids):len(user_ids) + len(product_ids)] = \
-                torch.LongTensor(self.products['year'].cat.codes.values.astype('int64') + 1)
+        if 'year' in self.products.columns:
+            g.ndata['year'] = torch.zeros(g.number_of_nodes(), dtype=torch.int64)
+            # 0 for padding
+            g.ndata['year'][len(user_ids):len(user_ids) + len(product_ids)] = \
+                    torch.LongTensor(self.products['year'].cat.codes.values.astype('int64') + 1)
 
         # product title
         nlp = stanfordnlp.Pipeline(use_gpu=False, processors='tokenize,lemma')
@@ -207,38 +210,22 @@ class MovieLens20M(MovieLens):
         self.directory = directory
 
         ratings = pd.read_csv(os.path.join(directory, 'ratings.csv'))
-        ratings = ratings.rename({'userId': 'user_id', 'movieId': 'productId'}, axis=1)
-
+        ratings = ratings.rename({'userId': 'user_id', 'movieId': 'product_id'}, axis=1)
+        product_count = ratings['product_id'].value_counts()
+        product_count.name = 'product_count'
+        ratings = ratings.join(product_count, on='product_id')
         self.ratings = ratings
+
         self.users = pd.DataFrame({'id': ratings['user_id'].unique()})
         self.users['nid'] = self.users['id']
         self.users = self.users.set_index('id').astype('category')  # assign user ID as feature
 
-        products = []
-        with open(os.path.join(directory, 'movies.dat'), encoding='latin1') as f:
-            for i, l in enumerate(f):
-                if i == 0:
-                    # skip header
-                    continue
-
-                id_, title, genres = l.strip().split(',')
-                genres_set = set(genres.split('|'))
-
-                # extract year
-                assert re.match(r'.*\([0-9]{4}\)$', title)
-                year = title[-5:-1]
-                title = title[:-6].strip()
-
-                data = {'id': int(id_), 'title': title, 'year': year}
-                for g in genres_set:
-                    data[g] = True
-                products.append(data)
-        self.products = (
-                pd.DataFrame(products)
-                .set_index('id')
-                .fillna(False)
-                .astype({'year': 'category'}))
-        self.genres = self.products.columns[self.products.dtypes == bool]
+        self.products = pd.read_csv(os.path.join(directory, 'movies.csv'))
+        self.products['genres'] = self.products['genres'].map(lambda x: set(x.split('|')))
+        self.genres = reduce(operator.or_, self.products['genres'], set())
+        for genre in self.genres:
+            self.products[genre] = self.products['genres'].map(lambda x: genre in x)
+        self.products = self.products.drop('genres', axis=1).set_index('movieId')
 
         self.users = self.users[self.users.index.isin(self.ratings['user_id'])]
         self.products = self.products[self.products.index.isin(self.ratings['product_id'])]
