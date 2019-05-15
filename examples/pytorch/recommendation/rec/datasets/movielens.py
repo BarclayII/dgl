@@ -210,7 +210,9 @@ class MovieLens20M(MovieLens):
         ratings = ratings.rename({'userId': 'user_id', 'movieId': 'productId'}, axis=1)
 
         self.ratings = ratings
-        self.users = pd.DataFrame({'id': ratings['user_id'].unique()}).set_index('id').astype('category')
+        self.users = pd.DataFrame({'id': ratings['user_id'].unique()})
+        self.users['nid'] = self.users['id']
+        self.users = self.users.set_index('id').astype('category')  # assign user ID as feature
 
         products = []
         with open(os.path.join(directory, 'movies.dat'), encoding='latin1') as f:

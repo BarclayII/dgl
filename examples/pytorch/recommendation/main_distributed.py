@@ -34,6 +34,7 @@ parser.add_argument('--cache', type=str, default='/tmp/dataset.pkl',
 parser.add_argument('--dataset', type=str, default='movielens')
 parser.add_argument('--train-port', type=int, default=5902)
 parser.add_argument('--valid-port', type=int, default=5901)
+parser.add_argument('--num-samplers', type=int, default=8)
 args = parser.parse_args()
 
 print(args)
@@ -128,7 +129,7 @@ def forward(model, nodeflow, train=True):
 
 
 train_sampler = NodeFlowReceiver(args.train_port)
-train_sampler.waitfor(8)
+train_sampler.waitfor(args.num_samplers)
 
 def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
     global opt
@@ -223,7 +224,7 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
     return avg_loss, avg_acc
 
 valid_sampler = NodeFlowReceiver(args.valid_port)
-valid_sampler.waitfor(8)
+valid_sampler.waitfor(args.num_samplers)
 
 def runtest(g_prior_edges, validation=True):
     model.eval()
