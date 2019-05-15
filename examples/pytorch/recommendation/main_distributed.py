@@ -43,8 +43,8 @@ if os.path.exists(cache_file):
     with open(cache_file, 'rb') as f:
         ml = pickle.load(f)
 elif args.dataset == 'movielens':
-    from rec.datasets.movielens import MovieLens
-    ml = MovieLens('./ml-1m')
+    from rec.datasets.movielens import MovieLens20M
+    ml = MovieLens20M('/efs/quagan/movielens/ml-20m')
     with open(cache_file, 'wb') as f:
         pickle.dump(ml, f, protocol=4)
 elif args.dataset == 'cikm':
@@ -60,10 +60,7 @@ else:
     with open(cache_file, 'wb') as f:
         pickle.dump(ml, f, protocol=4)
 
-if args.dataset == 'movielens':
-    neighbors = ml.user_neighbors + ml.product_neighbors
-else:
-    neighbors = []
+neighbors = []
 
 if args.dataset == 'cikm':
     ml.query_tokens = cuda(ml.query_tokens)
