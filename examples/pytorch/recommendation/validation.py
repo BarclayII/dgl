@@ -3,37 +3,48 @@ import tqdm
 import numpy as np
 from rec.utils import cuda
 
-def compute_validation_ml(ml, h, model):
+def compute_validation_ml(ml, h, model, test):
     rr = []
+    validation = not test
+    n_users = len(ml.users)
+    n_products = len(ml.products)
+
+    h = h.cpu()
+    M = h[:n_users] @ h[n_users:].t()
+
+    exclude_mask = (ml.ratings['train'] | ml.ratings['valid'] | ml.ratings['test']).values
+    candidate_mask = (ml.ratings['valid' if validation else 'test']).values
+    user_ids = ml.ratings['user_id'].values
+    product_ids = ml.ratings['product_id'].values
+
+    if not hasattr(ml, 'p_nids'):
+        ml.p_nids = []
+        ml.p_nids_candidate = []
+        with tqdm.trange(n_users) as tq:
+            for u_nid in tq:
+                uid = ml.user_ids[u_nid]
+                uid_mask = (user_ids == uid)
+                pids_exclude = product_ids[uid_mask & exclude_mask]
+                pids_candidate = product_ids[uid_mask & candidate_mask]
+                pids = np.setdiff1d(ml.product_ids, pids_exclude)
+                p_nids = np.array([ml.product_ids_invmap[pid] for pid in pids])
+                p_nids_candidate = np.array([ml.product_ids_invmap[pid] for pid in pids_candidate])
+                ml.p_nids.append(p_nids)
+                ml.p_nids_candidate.append(p_nids_candidate)
 
     with torch.no_grad():
         with tqdm.trange(n_users) as tq:
             for u_nid in tq:
-                uid = ml.user_ids[u_nid]
-                pids_exclude = ml.ratings[
-                        (ml.ratings['user_id'] == uid) &
-                        (ml.ratings['train'] | ml.ratings['test' if validation else 'valid'])
-                        ]['product_id'].values
-                pids_candidate = ml.ratings[
-                        (ml.ratings['user_id'] == uid) &
-                        ml.ratings['valid' if validation else 'test']
-                        ]['product_id'].values
-                pids = np.setdiff1d(ml.product_ids, pids_exclude)
-                p_nids = np.array([ml.product_ids_invmap[pid] for pid in pids])
-                p_nids_candidate = np.array([ml.product_ids_invmap[pid] for pid in pids_candidate])
+                p_nids = ml.p_nids[u_nid]
+                p_nids_candidate = ml.p_nids_candidate[u_nid]
 
-                dst = torch.from_numpy(p_nids) + n_users
-                src = torch.zeros_like(dst).fill_(u_nid)
-                h_dst = h[dst]
-                h_src = h[src]
-
-                score = (h_src * h_dst).sum(1)
-                score_sort_idx = score.sort(descending=True)[1].cpu().numpy()
+                score = M[u_nid, p_nids]
+                score_sort_idx = score.sort(descending=True)[1].numpy()[:25]
 
                 rank_map = {v: i for i, v in enumerate(p_nids[score_sort_idx])}
-                rank_candidates = np.array([rank_map[p_nid] for p_nid in p_nids_candidate])
+                rank_candidates = np.array([rank_map[p_nid] for p_nid in p_nids_candidate if p_nid in rank_map])
                 rank = 1 / (rank_candidates + 1)
-                rr.append(rank.mean())
+                rr.append(rank.mean() if len(rank) > 0 else 0.)
                 tq.set_postfix({'rank': rank.mean()})
 
     return np.array(rr)
@@ -82,4 +93,10 @@ def compute_validation_cikm(ml, h, model, test):
                         unknown_items)
                 print(row['queryId'], output, file=outfile)
     outfile.close()
+
+    if test:
+        import sh
+        sh.cp('submission.txt', '/efs/quagan/diginetica/res')
+        sh.python('/efs/quagan/diginetica/score.py', '/efs/quagan/diginetica', '/efs/quagan/diginetica/out')
+        sh.tee(sh.cat('/efs/quagan/diginetica/out/scores.txt'), 'test.log')
     return np.array([0.])

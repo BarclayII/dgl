@@ -78,7 +78,6 @@ g = ml.g
 n_hidden = 100
 n_layers = args.layers
 batch_size = 32
-samples_per_epoch= 9000 * batch_size
 margin = 0.9
 
 n_negs = args.n_negs
@@ -279,7 +278,7 @@ def train():
         with open(cache_mask_file, 'wb') as f:
             pickle.dump((g_prior_edges, g_train_edges, g_prior_train_edges), f)
 
-    edge_perm = np.array_split(np.random.permutation(g_train_edges.shape[0]), 25)
+    edge_perm = np.array_split(np.random.permutation(g_train_edges.shape[0]), 1)
     i = -1
     for epoch in range(500):
         print('Epoch %d validation' % epoch)
@@ -296,9 +295,9 @@ def train():
                 test_mrr = runtest(g_prior_train_edges, False)
             print(pd.Series(test_mrr).describe())
 
-        if i is None or i == 25:
+        if i is None or i == 1:
             i = 0
-            edge_perm = np.array_split(np.random.permutation(g_train_edges.shape[0]), 25)
+            edge_perm = np.array_split(np.random.permutation(g_train_edges.shape[0]), 1)
         edges_this_epoch = torch.LongTensor(edge_perm[i])
         i += 1
 

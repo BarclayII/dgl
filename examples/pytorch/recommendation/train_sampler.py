@@ -64,7 +64,7 @@ neighbors = []
 
 g = ml.g
 n_layers = args.layers
-batch_size = 16
+batch_size = 32
 
 n_negs = args.n_negs
 hard_neg_prob = args.hard_neg_prob

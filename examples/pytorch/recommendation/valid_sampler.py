@@ -64,7 +64,7 @@ neighbors = []
 
 g = ml.g
 n_layers = args.layers
-batch_size = 16
+batch_size = 32
 
 n_users = len(ml.user_ids)
 n_items = len(ml.product_ids)

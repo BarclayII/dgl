@@ -121,6 +121,8 @@ RandomWalkTraces GenericRandomWalkWithRestart(
   visit_counts.resize(gptr->NumVertices());
 
   unsigned int random_seed = randseed();
+  clock_t t0 = clock();
+  size_t grand_total_trace_length = 0, grand_total_num_traces = 0;
 
   for (uint64_t i = 0; i < num_nodes; ++i) {
     int stop = 0;
@@ -157,7 +159,11 @@ RandomWalkTraces GenericRandomWalkWithRestart(
 
     trace_counts.push_back(num_traces);
     ++seed_iter;
+    grand_total_trace_length += total_trace_length;
+    grand_total_num_traces += num_traces;
   }
+  clock_t tt = clock();
+  std::cout << tt - t0 << ' ' << num_nodes << ' ' << grand_total_trace_length << ' ' << grand_total_num_traces << std::endl;
 
   RandomWalkTraces traces;
   traces.trace_counts = IdArray::Empty(
