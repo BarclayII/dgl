@@ -13,6 +13,7 @@
 #include <cmath>
 #include <numeric>
 #include <functional>
+#include <ctime>
 #include "../c_api_common.h"
 
 using dgl::runtime::DGLArgs;
@@ -255,6 +256,7 @@ NodeFlow CreateNodeFlowWithPPRFromRandomWalk(
   std::unordered_set<dgl_id_t> sub_ver_map;
   std::vector<dgl_id_t> sub_vers;
   std::map<dgl_id_t, size_t> visit_counter;   // ordered since we need to sort it
+  clock_t s = clock();
 
   for (size_t i = 0; i < num_seeds; ++i) {
     auto ret = sub_ver_map.insert(seed_data[i]);
@@ -376,7 +378,6 @@ std::vector<NodeFlow *> PPRNeighborSampling(
       (num_seeds + batch_size - 1) / batch_size - batch_start_id);
 
   std::vector<NodeFlow *> nflows(num_workers);
-#pragma omp parallel for
   for (int i = 0; i < num_workers; ++i) {
     const int64_t start = (batch_start_id + i) * batch_size;
     const int64_t end = std::min(start + batch_size, num_seeds);
