@@ -196,7 +196,7 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
                 h_src = h_src + h_tokens + h_category
 
             pos_score = (h_src * h_dst).sum(1)
-            neg_score = (h_src * h_dst_neg).sum(1).view(batch_size, n_negs)
+            neg_score = (h_src[:, None] * h_dst_neg.view(batch_size, n_negs, -1)).sum(2)
             pos_nlogp = -F.logsigmoid(pos_score)
             neg_nlogp = -F.logsigmoid(-neg_score)
             loss = (pos_nlogp + neg_nlogp.sum(1)).mean()

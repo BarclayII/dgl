@@ -174,6 +174,7 @@ class MovieLens(UserProductDataset):
                 uid_mask = (user_ids == uid)
                 pids_exclude = product_ids[uid_mask & exclude_mask]
                 pids_candidate_valid = product_ids[uid_mask & candidate_mask_valid]
+                pids_candidate_test = product_ids[uid_mask & candidate_mask_test]
                 pids = np.setdiff1d(self.product_ids, pids_exclude)
                 p_nids = np.array([self.product_ids_invmap[pid] for pid in pids])
                 p_nids_candidate_valid = np.array([self.product_ids_invmap[pid] for pid in pids_candidate_valid])
