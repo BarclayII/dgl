@@ -11,32 +11,13 @@ def compute_validation_ml(ml, h, model, test):
 
     h = h.cpu()
     M = h[:n_users] @ h[n_users:].t()
-
-    exclude_mask = (ml.ratings['train'] | ml.ratings['valid'] | ml.ratings['test']).values
-    candidate_mask = (ml.ratings['valid' if validation else 'test']).values
-    user_ids = ml.ratings['user_id'].values
-    product_ids = ml.ratings['product_id'].values
-
-    if not hasattr(ml, 'p_nids'):
-        ml.p_nids = []
-        ml.p_nids_candidate = []
-        with tqdm.trange(n_users) as tq:
-            for u_nid in tq:
-                uid = ml.user_ids[u_nid]
-                uid_mask = (user_ids == uid)
-                pids_exclude = product_ids[uid_mask & exclude_mask]
-                pids_candidate = product_ids[uid_mask & candidate_mask]
-                pids = np.setdiff1d(ml.product_ids, pids_exclude)
-                p_nids = np.array([ml.product_ids_invmap[pid] for pid in pids])
-                p_nids_candidate = np.array([ml.product_ids_invmap[pid] for pid in pids_candidate])
-                ml.p_nids.append(p_nids)
-                ml.p_nids_candidate.append(p_nids_candidate)
+    p_nids_candidate = ml.p_nids_candidate_valid if not test else ml.p_nids_candidate_test
 
     with torch.no_grad():
         with tqdm.trange(n_users) as tq:
             for u_nid in tq:
                 p_nids = ml.p_nids[u_nid]
-                p_nids_candidate = ml.p_nids_candidate[u_nid]
+                p_nids_candidate = p_nids_candidate[u_nid]
 
                 score = M[u_nid, p_nids]
                 score_sort_idx = score.sort(descending=True)[1].numpy()[:25]

@@ -165,7 +165,8 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
             src = torch.LongTensor(src)
             dst = torch.LongTensor(dst)
             dst_neg = torch.LongTensor(dst_neg)
-            src_size = dst_size = dst_neg_size = src.shape[0]
+            src_size = dst_size = src.shape[0]
+            dst_neg_size = dst_neg.shape[0]
             count += src_size
 
             # Generate a NodeFlow given the sources/destinations/negative destinations.  We need
