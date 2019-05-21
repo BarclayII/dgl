@@ -123,19 +123,7 @@ for epoch in range(500):
     edge_shuffled = g_train_edges[torch.LongTensor(sender.recv())]
     src, dst = g.find_edges(edge_shuffled)
     dst_neg = find_negs(dst, ml, neighbors, hard_neg_prob, n_negs)
-    # expand if we have multiple negative products for each training pair
-    dst = dst.view(-1, 1).expand_as(dst_neg).flatten()
-    src = src.view(-1, 1).expand_as(dst_neg).flatten()
     dst_neg = dst_neg.flatten()
-    # Check whether these nodes have predecessors in *prior* graph.  Filter out
-    # those who don't.
-    mask = (g_prior.in_degrees(dst_neg) > 0) & \
-           (g_prior.in_degrees(dst) > 0) & \
-           (g_prior.in_degrees(src) > 0)
-    src = src[mask]
-    dst = dst[mask]
-    dst_neg = dst_neg[mask]
-    edge_shuffled = edge_shuffled[mask]
     # Chop the users, items and negative items into batches and reorganize
     # them into seed nodes.
     # Note that the batch size of DGL sampler here is 3 times our batch size,
@@ -143,7 +131,7 @@ for epoch in range(500):
     edge_batches = edge_shuffled.split(batch_size)
     src_batches = src.split(batch_size)
     dst_batches = dst.split(batch_size)
-    dst_neg_batches = dst_neg.split(batch_size)
+    dst_neg_batches = dst_neg.split(batch_size * n_negs)
 
     seed_nodes = []
     for i in range(len(src_batches)):
@@ -154,7 +142,7 @@ for epoch in range(500):
 
     sampler = PPRBipartiteSingleSidedNeighborSampler(
             g_prior,
-            batch_size * 3,
+            batch_size * (2 + n_negs),
             n_layers + 1,
             10,
             50,

@@ -25,7 +25,6 @@ parser.add_argument('--use-feature', action='store_true')
 parser.add_argument('--sgd-switch', type=int, default=-1,
                     help='The number of epoch to switch to SGD (-1 = never)')
 parser.add_argument('--n-negs', type=int, default=1)
-parser.add_argument('--loss', type=str, default='hinge')
 parser.add_argument('--hard-neg-prob', type=float, default=0,
                     help='Probability to sample from hard negative examples (0 = never)')
 # Reddit dataset in particular is not finalized and is only for my (GQ's) internal purpose.
@@ -195,9 +194,12 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
                 h_category = model.emb['category'](category)
                 h_src = h_src + h_tokens + h_category
 
-            diff = (h_src * (h_dst_neg - h_dst)).sum(1)
-            loss = loss_func[args.loss](diff)
-            acc = (diff < 0).sum()
+            pos_score = (h_src * h_dst).sum(1)
+            neg_score = (h_src * h_dst_neg).sum(1).view(batch_size, n_negs)
+            pos_nlogp = -F.logsigmoid(pos_score)
+            neg_nlogp = -F.logsigmoid(-neg_score)
+            loss = (pos_nlogp + neg_nlogp.sum(1)).mean()
+            acc = ((pos_score > 0).sum() + (neg_score < 0).sum()) / (batch_size * (1 + n_negs))
             assert loss.item() == loss.item()
 
             grad_sqr_norm = 0
@@ -211,7 +213,7 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
                 opt.step()
 
             sum_loss += loss.item()
-            sum_acc += acc.item() / n_negs
+            sum_acc += acc.item()
             avg_loss = sum_loss / (batch_id + 1)
             avg_acc = sum_acc / count
             tq.set_postfix({'loss': '%.6f' % loss.item(),
