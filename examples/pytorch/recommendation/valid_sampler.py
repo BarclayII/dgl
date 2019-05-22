@@ -72,8 +72,8 @@ n_items = len(ml.product_ids)
 
 def refresh_mask():
     ml.refresh_mask()
-    g_prior_edges = g.filter_edges(lambda edges: edges.data['prior'])
-    g_train_edges = g.filter_edges(lambda edges: edges.data['train'] & ~edges.data['inv'])
+    g_prior_edges = g.filter_edges(lambda edges: (edges.data['prior'] | edges.data['train']))
+    g_train_edges = g.filter_edges(lambda edges: (edges.data['prior'] | edges.data['train']) & ~edges.data['inv'])
     g_prior_train_edges = g.filter_edges(
             lambda edges: edges.data['prior'] | edges.data['train'])
     return g_prior_edges, g_train_edges, g_prior_train_edges

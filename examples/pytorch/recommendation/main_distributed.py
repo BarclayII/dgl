@@ -200,7 +200,7 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
             pos_nlogp = -F.logsigmoid(pos_score)
             neg_nlogp = -F.logsigmoid(-neg_score)
             loss = (pos_nlogp + neg_nlogp.sum(1)).mean()
-            acc = ((pos_score > 0).sum() + (neg_score < 0).sum()) / (batch_size * (1 + n_negs))
+            acc = ((pos_score > 0).sum() + (neg_score < 0).sum()).float() / (batch_size * (1 + n_negs))
             assert loss.item() == loss.item()
 
             grad_sqr_norm = 0

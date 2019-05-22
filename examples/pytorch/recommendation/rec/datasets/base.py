@@ -72,3 +72,5 @@ class UserProductDataset(object):
 
         # not supporting slice
         self.g.edges[torch.arange(0, len(self.ratings) * 2)].data.update(edge_data)
+        #self.g.edges[torch.arange(len(self.ratings) * 2, self.g.number_of_edges())].data['prior'] = \
+        #        torch.ones(self.g.number_of_edges() - len(self.ratings) * 2).byte()
