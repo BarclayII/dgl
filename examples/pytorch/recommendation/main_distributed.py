@@ -196,11 +196,11 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
                 h_src = h_src + h_tokens + h_category
 
             pos_score = (h_src * h_dst).sum(1)
-            neg_score = (h_src[:, None] * h_dst_neg.view(batch_size, n_negs, -1)).sum(2)
+            neg_score = (h_src[:, None] * h_dst_neg.view(src_size, n_negs, -1)).sum(2)
             pos_nlogp = -F.logsigmoid(pos_score)
             neg_nlogp = -F.logsigmoid(-neg_score)
             loss = (pos_nlogp + neg_nlogp.sum(1)).mean()
-            acc = ((pos_score > 0).sum() + (neg_score < 0).sum()).float() / (batch_size * (1 + n_negs))
+            acc = ((pos_score > 0).sum() + (neg_score < 0).sum()).float() / (src_size * (1 + n_negs))
             assert loss.item() == loss.item()
 
             grad_sqr_norm = 0
@@ -216,7 +216,7 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
             sum_loss += loss.item()
             sum_acc += acc.item()
             avg_loss = sum_loss / (batch_id + 1)
-            avg_acc = sum_acc / count
+            avg_acc = sum_acc / (batch_id + 1)
             tq.set_postfix({'loss': '%.6f' % loss.item(),
                             'avg_loss': '%.3f' % avg_loss,
                             'avg_acc': '%.3f' % avg_acc,

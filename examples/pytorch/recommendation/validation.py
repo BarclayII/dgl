@@ -11,13 +11,13 @@ def compute_validation_ml(ml, h, model, test):
 
     h = h.cpu()
     M = h[:n_users] @ h[n_users:].t()
-    p_nids_candidate = ml.p_nids_candidate_valid if not test else ml.p_nids_candidate_test
+    p_nids_candidates = ml.p_nids_candidate_valid if not test else ml.p_nids_candidate_test
 
     with torch.no_grad():
         with tqdm.trange(n_users) as tq:
             for u_nid in tq:
                 p_nids = ml.p_nids[u_nid]
-                p_nids_candidate = p_nids_candidate[u_nid]
+                p_nids_candidate = p_nids_candidates[u_nid]
 
                 score = M[u_nid, p_nids]
                 score_sort_idx = score.sort(descending=True)[1].numpy()[:25]
