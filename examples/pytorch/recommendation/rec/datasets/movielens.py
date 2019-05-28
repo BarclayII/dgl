@@ -109,6 +109,9 @@ class MovieLens(UserProductDataset):
             udata[:len(user_ids)] = \
                     torch.LongTensor(self.users[user_column].cat.codes.values.astype('int64') + 1)
             g.ndata[user_column] = udata
+        g.ndata['nid'] = torch.cat([
+            torch.arange(1, 1 + len(user_ids)),
+            torch.zeros(len(product_ids) + len(query_ids), dtype=torch.int64)])
 
         # product genre
         product_genres = torch.from_numpy(self.products[self.genres].values.astype('float32'))
