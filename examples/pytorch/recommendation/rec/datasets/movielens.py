@@ -111,7 +111,7 @@ class MovieLens(UserProductDataset):
             g.ndata[user_column] = udata
         g.ndata['nid'] = torch.cat([
             torch.arange(1, 1 + len(user_ids)),
-            torch.zeros(len(product_ids) + len(query_ids), dtype=torch.int64)])
+            torch.zeros(len(product_ids), dtype=torch.int64)])
 
         # product genre
         product_genres = torch.from_numpy(self.products[self.genres].values.astype('float32'))
