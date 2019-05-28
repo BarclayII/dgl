@@ -60,6 +60,7 @@ def compute_validation_cikm(ml, h, model, test):
                         h_src = h[uid]
                 if len(unknown_items) > 0:
                     #print('%d: unknown items %s' % (row['queryId'], unknown_items))
+                    pass
 
                 if isinstance(row['searchstring.tokens'], str):     # i.e. not nan
                     tokens = cuda(torch.LongTensor(
