@@ -42,6 +42,11 @@ cache_file = args.cache
 if os.path.exists(cache_file):
     with open(cache_file, 'rb') as f:
         ml = pickle.load(f)
+elif args.dataset == 'movielens1m':
+    from rec.datasets.movielens import MovieLens
+    ml = MovieLens('/efs/quagan/movielens/ml-1m')
+    with open(cache_file, 'wb') as f:
+        pickle.dump(ml, f, protocol=4)
 elif args.dataset == 'movielens':
     from rec.datasets.movielens import MovieLens20M
     ml = MovieLens20M('/efs/quagan/movielens/ml-20m')
