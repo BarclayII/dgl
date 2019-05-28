@@ -37,6 +37,8 @@ def compute_validation_cikm(ml, h, model, test):
 
     with torch.no_grad():
         queries = ml.test_queries if test else ml.train_queries_with_clicks
+        mrr = 0
+        count = 0
         with tqdm.tqdm(queries.iterrows()) as tq:
             for idx, row in tq:
                 uid = row['userId']
@@ -45,34 +47,45 @@ def compute_validation_cikm(ml, h, model, test):
                          if int(i) in ml.product_ids_invmap]
                 unknown_items = [i for i in row['items'].split(',')
                                  if int(i) not in ml.product_ids_invmap]
-                h_dst = h[items]
+                h_dst = h[[i + len(ml.users) for i in items]]
 
                 if np.isnan(uid):
                     h_src = 0
                 else:
                     if int(uid) not in ml.user_ids_invmap:
-                        print('%d: %d not showing up in ml.user_ids_invmap' % (row['queryId'], uid))
+                        #print('%d: %d not showing up in ml.user_ids_invmap' % (row['queryId'], uid))
                         h_src = 0
                     else:
                         uid = ml.user_ids_invmap[int(uid)]
                         h_src = h[uid]
                 if len(unknown_items) > 0:
-                    print('%d: unknown items %s' % (row['queryId'], unknown_items))
+                    #print('%d: unknown items %s' % (row['queryId'], unknown_items))
 
                 if isinstance(row['searchstring.tokens'], str):     # i.e. not nan
                     tokens = cuda(torch.LongTensor(
                         [int(i) for i in row['searchstring.tokens'].split(',')]))
-                    h_src += model.emb['tokens'](tokens).mean(0)
+                    h_src = h_src + model.emb['tokens'](tokens).mean(0)
                 if row['categoryId']:
                     category = cuda(torch.tensor(int(row['categoryId'])))
-                    h_src += model.emb['category'](category)
+                    h_src = h_src + model.emb['category'](category)
 
                 score = (h_dst * h_src).sum(1)
                 score_sort_idx = score.sort(descending=True)[1].cpu().numpy()
-                output = ','.join(
-                        [str(ml.product_ids[items[i]]) for i in score_sort_idx] +
-                        unknown_items)
+                reordered_items = [ml.product_ids[items[i]] for i in score_sort_idx]
+                output = ','.join([str(i) for i in reordered_items] + unknown_items)
                 print(row['queryId'], output, file=outfile)
+
+                if not test:
+                    rated_products = ml.ratings[ml.ratings['user_id'] == ml.user_ids[uid]]['product_id'].values
+                    contained = np.isin(reordered_items, rated_products)
+                    if not contained.any():
+                        #print('%d: interacted products %s\n %d: queries %s' %
+                        #       (row['queryId'], rated_products, row['queryId'], reordered_items))
+                        continue
+                    rr = np.argmax(contained) + 1
+                    mrr = (mrr * idx + 1 / rr) / (idx + 1)
+                    tq.set_postfix({'rr': rr, 'mrr': '%.6f' % mrr})
+
     outfile.close()
 
     if test:

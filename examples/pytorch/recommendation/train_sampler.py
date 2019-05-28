@@ -85,9 +85,18 @@ def find_negs(dst, ml, neighbors, hard_neg_prob, n_negs):
     dst_neg = []
     for i in range(len(dst)):
         if np.random.rand() < hard_neg_prob:
-            nb = torch.LongTensor(neighbors[dst[i].item()])
-            mask = ~(g.has_edges_between(nb, src[i].item()).byte())
-            dst_neg.append(np.random.choice(nb[mask].numpy(), n_negs))
+            if args.dataset == 'cikm':
+                query_ids = ml.query_candidates[
+                    ml.query_candidates['product_id'] == ml.product_ids[dst[i].item() - len(ml.users)]]['query_id'].values
+                query_id = np.random.choice(query_ids)
+                product_candidates = ml.query_candidates[
+                    ml.query_candidates['query_id'] == query_id]['product_id'].values
+                selected_products = np.random.choice(product_candidates, n_negs)
+                dst_neg.append(np.array([ml.product_ids_invmap[i] + len(ml.users) for i in selected_products]))
+            else:
+                nb = torch.LongTensor(neighbors[dst[i].item()])
+                mask = ~(g.has_edges_between(nb, src[i].item()).byte())
+                dst_neg.append(np.random.choice(nb[mask].numpy(), n_negs))
         else:
             dst_neg.append(np.random.randint(
                 len(ml.user_ids), len(ml.user_ids) + len(ml.product_ids), n_negs))

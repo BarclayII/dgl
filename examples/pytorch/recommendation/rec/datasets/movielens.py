@@ -152,11 +152,13 @@ class MovieLens(UserProductDataset):
         g.add_edges(
                 rating_user_vertices,
                 rating_product_vertices,
-                data={'inv': torch.zeros(self.ratings.shape[0], dtype=torch.uint8)})
+                data={'inv': torch.zeros(self.ratings.shape[0], dtype=torch.uint8),
+                    'rating': torch.FloatTensor(self.ratings['rating'])})
         g.add_edges(
                 rating_product_vertices,
                 rating_user_vertices,
-                data={'inv': torch.ones(self.ratings.shape[0], dtype=torch.uint8)})
+                data={'inv': torch.ones(self.ratings.shape[0], dtype=torch.uint8),
+                    'rating': torch.FloatTensor(self.ratings['rating'])})
         self.g = g
 
         exclude_mask = (self.ratings['train'] | self.ratings['valid'] | self.ratings['test']).values

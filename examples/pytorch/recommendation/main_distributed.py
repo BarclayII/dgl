@@ -109,7 +109,8 @@ model = cuda(PinSage(
 
 opt = getattr(torch.optim, args.opt)(
         list(model.parameters()),
-        lr=args.lr)
+        lr=args.lr,
+        weight_decay=1e-5)
 sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda[args.sched])
 
 
@@ -199,8 +200,12 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
             neg_score = (h_src[:, None] * h_dst_neg.view(src_size, n_negs, -1)).sum(2)
             pos_nlogp = -F.logsigmoid(pos_score)
             neg_nlogp = -F.logsigmoid(-neg_score)
-            loss = (pos_nlogp + neg_nlogp.sum(1)).mean()
-            acc = ((pos_score > 0).sum() + (neg_score < 0).sum()).float() / (src_size * (1 + n_negs))
+            if args.dataset == 'movielens':
+                loss = (pos_score - g.edges[edges].data['rating']) ** 2
+                acc = loss
+            else:
+                loss = (pos_nlogp + neg_nlogp.sum(1)).mean()
+                acc = ((pos_score > 0).sum() + (neg_score < 0).sum()).float() / (src_size * (1 + n_negs))
             assert loss.item() == loss.item()
 
             grad_sqr_norm = 0
@@ -260,7 +265,7 @@ def runtest(g_prior_edges, validation=True):
     h = torch.cat(hs, 0)
     auxs = torch.cat(auxs, 0)
     assert (np.sort(auxs.numpy()) == np.arange(n_items)).all()
-    h = h[auxs]     # reorder h
+    h = h[auxs.sort()[1]]     # reorder h
     h = torch.cat([
         model.emb['nid'](cuda(torch.arange(0, n_users).long() + 1)),
         h], 0)
