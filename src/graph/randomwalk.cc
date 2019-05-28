@@ -164,7 +164,6 @@ RandomWalkTraces GenericRandomWalkWithRestart(
     grand_total_num_traces += num_traces;
   }
   clock_t tt = clock();
-  std::cout << tt - t0 << ' ' << num_nodes << ' ' << grand_total_trace_length << ' ' << grand_total_num_traces << std::endl;
 
   RandomWalkTraces traces;
   traces.trace_counts = IdArray::Empty(
