@@ -110,14 +110,19 @@ class PinSage(nn.Module):
         '''
         nf: NodeFlow.
         '''
-        nid = nf.layer_parent_nid(0)
+        layer_id = 0 if self.n_layers > 0 else -1
+
+        nid = nf.layer_parent_nid(layer_id)
         if h is not None:
-            h = h(nid)
+            h = h(cuda(nid))
         if self.use_feature:
-            nf.layers[0].data['h'] = mix_embeddings(
-                    h, nf.layers[0].data, self.emb, self.proj)
+            nf.layers[layer_id].data['h'] = mix_embeddings(
+                    h, nf.layers[layer_id].data, self.emb, self.proj)
         else:
-            nf.layers[0].data['h'] = cuda(h)
+            nf.layers[layer_id].data['h'] = cuda(h)
+
+        if self.n_layers == 0:
+            return nf.layers[layer_id].data['h']
 
         for i in range(nf.num_blocks):
             parent_nid = nf.layer_parent_nid(i + 1)
@@ -130,3 +135,31 @@ class PinSage(nn.Module):
         result = nf.layers[-1].data['h']
         assert (result != result).sum() == 0
         return result
+
+
+class BaseModel(nn.Module):
+    def __init__(self, feature_size, use_feature=False, G=None, emb={}, proj={}):
+        super(BaseModel, self).__init__()
+        self.feature_size = feature_size
+
+        if use_feature:
+            self.emb = nn.ModuleDict()
+            self.proj = nn.ModuleDict()
+
+            for key, scheme in G.node_attr_schemes().items():
+                if scheme.dtype == torch.int64:
+                    self.emb[key] = emb.get(key, nn.Embedding(
+                            G.ndata[key].max().item() + 1,
+                            self.in_features,
+                            padding_idx=0))
+                elif scheme.dtype == torch.float32:
+                    self.proj[key] = proj.get(key, nn.Sequential(
+                            nn.Linear(scheme.shape[0], self.in_features),
+                            nn.LeakyReLU(),
+                            ))
+
+        self.G = G
+
+    def forward(self, nodes):
+        h = mix_embeddings(None, self.G.nodes[nodes].data, self.emb, self.proj)
+        return h

@@ -3,6 +3,24 @@ import tqdm
 import numpy as np
 from rec.utils import cuda
 
+def compute_validation_rating(ml, h, model, test):
+    n_users = len(ml.users)
+    n_products = len(ml.products)
+
+    h = h.cpu()
+    M = h[:n_users] @ h[n_users:].t()
+    field = 'valid' if not test else 'test'
+    ratings = ml.ratings[ml.ratings[field]]
+    avg_error = 0
+    l = np.zeros(len(ratings))
+    u_nids = [ml.user_ids_invmap[i] for i in ratings['user_id'].values]
+    p_nids = [ml.product_ids_invmap[i] for i in ratings['product_id'].values]
+    error = (ratings['rating'].values - M[u_nids, p_nids].numpy()) ** 2
+    rmse = np.sqrt(error.mean())
+    print(rmse)
+
+    return error
+
 def compute_validation_ml(ml, h, model, test):
     rr = []
     validation = not test

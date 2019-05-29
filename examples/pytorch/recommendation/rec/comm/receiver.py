@@ -13,7 +13,13 @@ class NodeFlowReceiver(object):
         sel = selectors.DefaultSelector()
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-        s.bind(('0.0.0.0', port))
+        for _ in range(30):
+            try:
+                s.bind(('0.0.0.0', port))
+                break
+            except:
+                print('Retrying...')
+                time.sleep(5)
         s.listen()
         print('Created listener at %d' % port)
         s.setblocking(False)

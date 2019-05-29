@@ -71,7 +71,7 @@ if args.dataset == 'cikm':
     ml.query_tokens = cuda(ml.query_tokens)
 
 _compute_validation = {
-        'movielens1m': compute_validation_ml,
+        'movielens1m': compute_validation_rating,
         'movielens': compute_validation_ml,
         'reddit': compute_validation_ml,
         'cikm': compute_validation_cikm,
@@ -112,11 +112,12 @@ model = cuda(PinSage(
     G=g,
     emb=emb,
     ))
+nid_h = cuda(nn.Embedding(1 + len(ml.users) + len(ml.products), n_hidden, padding_idx=0))
 
 opt = getattr(torch.optim, args.opt)(
-        list(model.parameters()),
+        list(model.parameters()) + list(nid_h.parameters()),
         lr=args.lr,
-        weight_decay=1e-5)
+        weight_decay=1e-3)
 sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda[args.sched])
 
 
@@ -127,10 +128,10 @@ def cast_ppr_weight(nodeflow):
 
 def forward(model, nodeflow, train=True):
     if train:
-        return model(nodeflow, None)
+        return model(nodeflow, nid_h)
     else:
         with torch.no_grad():
-            return model(nodeflow, None)
+            return model(nodeflow, nid_h)
 
 
 train_sampler = NodeFlowReceiver(args.train_port)
@@ -162,12 +163,15 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
         sum_loss = 0
         sum_acc = 0
         count = 0
+        #batch_id, (nodeflow, aux_data) = next(enumerate(tq))
+        #for _ in range(10000):
         for batch_id, (nodeflow, aux_data) in enumerate(tq):
             # TODO: got stuck on making this sampling process distributed...
             # SAMPLING PROCESS BEGIN
             # find the source nodes (users), destination nodes (positive products), and
             # negative destination nodes (negative products) in *original* graph.
             edges, src, dst, dst_neg = aux_data[:4]
+            #dst_neg = np.random.randint(len(ml.users), len(ml.users) + len(ml.products), batch_size * n_negs)
             edges = torch.LongTensor(edges)
             src = torch.LongTensor(src)
             dst = torch.LongTensor(dst)
@@ -190,7 +194,7 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
             output_idx = nodeflow.map_from_parent_nid(-1, nodeset)
             h = node_output[output_idx]
             h_dst, h_dst_neg = h.split([dst_size, dst_neg_size])
-            h_src = model.emb['nid'](cuda(g.nodes[src].data['nid']))
+            h_src = nid_h(cuda(g.nodes[src].data['nid']))
 
             # For CIKM, add query/category embeddings to user embeddings.
             # This is somehow inspired by TransE
@@ -206,8 +210,9 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
             neg_score = (h_src[:, None] * h_dst_neg.view(src_size, n_negs, -1)).sum(2)
             pos_nlogp = -F.logsigmoid(pos_score)
             neg_nlogp = -F.logsigmoid(-neg_score)
-            if args.dataset == 'movielens':
-                loss = (pos_score - g.edges[edges].data['rating']) ** 2
+            if args.dataset == 'movielens' or args.dataset == 'movielens1m':
+                loss = (pos_score - cuda(g.edges[edges].data['rating'])) ** 2
+                loss = loss.mean()
                 acc = loss
             else:
                 loss = (pos_nlogp + neg_nlogp.sum(1)).mean()
@@ -273,7 +278,7 @@ def runtest(g_prior_edges, validation=True):
     assert (np.sort(auxs.numpy()) == np.arange(n_items)).all()
     h = h[auxs.sort()[1]]     # reorder h
     h = torch.cat([
-        model.emb['nid'](cuda(torch.arange(0, n_users).long() + 1)),
+        nid_h(cuda(torch.arange(0, n_users).long() + 1)),
         h], 0)
 
     return compute_validation(ml, h, model, not validation)

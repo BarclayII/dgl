@@ -109,9 +109,6 @@ class MovieLens(UserProductDataset):
             udata[:len(user_ids)] = \
                     torch.LongTensor(self.users[user_column].cat.codes.values.astype('int64') + 1)
             g.ndata[user_column] = udata
-        g.ndata['nid'] = torch.cat([
-            torch.arange(1, 1 + len(user_ids)),
-            torch.zeros(len(product_ids), dtype=torch.int64)])
 
         # product genre
         product_genres = torch.from_numpy(self.products[self.genres].values.astype('float32'))
@@ -165,12 +162,14 @@ class MovieLens(UserProductDataset):
         self.g = g
 
         exclude_mask = (self.ratings['train'] | self.ratings['valid'] | self.ratings['test']).values
+        candidate_mask_train = self.ratings['train'].values
         candidate_mask_valid = self.ratings['valid'].values
         candidate_mask_test = self.ratings['test'].values
         user_ids = self.ratings['user_id'].values
         product_ids = self.ratings['product_id'].values
 
         self.p_nids = []
+        self.p_nids_candidate_train = []
         self.p_nids_candidate_valid = []
         self.p_nids_candidate_test = []
         with tqdm.trange(len(self.users)) as tq:
@@ -178,13 +177,16 @@ class MovieLens(UserProductDataset):
                 uid = self.user_ids[u_nid]
                 uid_mask = (user_ids == uid)
                 pids_exclude = product_ids[uid_mask & exclude_mask]
+                pids_candidate_train = product_ids[uid_mask & candidate_mask_train]
                 pids_candidate_valid = product_ids[uid_mask & candidate_mask_valid]
                 pids_candidate_test = product_ids[uid_mask & candidate_mask_test]
                 pids = np.setdiff1d(self.product_ids, pids_exclude)
                 p_nids = np.array([self.product_ids_invmap[pid] for pid in pids])
+                p_nids_candidate_train = np.array([self.product_ids_invmap[pid] for pid in pids_candidate_valid])
                 p_nids_candidate_valid = np.array([self.product_ids_invmap[pid] for pid in pids_candidate_valid])
                 p_nids_candidate_test = np.array([self.product_ids_invmap[pid] for pid in pids_candidate_test])
                 self.p_nids.append(p_nids)
+                self.p_nids_candidate_train.append(p_nids_candidate_train)
                 self.p_nids_candidate_valid.append(p_nids_candidate_valid)
                 self.p_nids_candidate_test.append(p_nids_candidate_test)
 
@@ -247,7 +249,6 @@ class MovieLens20M(MovieLens):
         self.ratings = ratings
 
         self.users = pd.DataFrame({'id': ratings['user_id'].unique()})
-        self.users['nid'] = self.users['id']
         self.users = self.users.set_index('id').astype('category')  # assign user ID as feature
 
         self.products = pd.read_csv(os.path.join(directory, 'movies.csv'))
