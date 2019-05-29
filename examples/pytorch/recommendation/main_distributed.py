@@ -34,6 +34,7 @@ parser.add_argument('--dataset', type=str, default='movielens')
 parser.add_argument('--train-port', type=int, default=5902)
 parser.add_argument('--valid-port', type=int, default=5901)
 parser.add_argument('--num-samplers', type=int, default=8)
+parser.add_argument('--batch-size', type=int, default=32)
 args = parser.parse_args()
 
 print(args)
@@ -82,7 +83,7 @@ g = ml.g
 
 n_hidden = 100
 n_layers = args.layers
-batch_size = 32
+batch_size = args.batch_size
 margin = 0.9
 
 n_negs = args.n_negs
@@ -115,16 +116,19 @@ model = cuda(PinSage(
 nid_h = cuda(nn.Embedding(1 + len(ml.users) + len(ml.products), n_hidden, padding_idx=0))
 nid_b = cuda(nn.Embedding(1 + len(ml.users) + len(ml.products), 1, padding_idx=0))
 
-with open('spotlight.pkl', 'rb') as f:
-    spotlight = pickle.load(f)
-    user_emb = spotlight._net.user_embeddings.weight
-    item_emb = spotlight._net.item_embeddings.weight
-    user_bias = spotlight._net.user_biases.weight
-    item_bias = spotlight._net.item_biases.weight
-    nid_h.weight.data[1:len(ml.users)+1] = user_emb[1:]
-    nid_h.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1] = item_emb[1:]
-    nid_b.weight.data[1:len(ml.users)+1] = user_bias[1:]
-    nid_b.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1] = item_bias[1:]
+#with open('pmap.pkl', 'rb') as f:
+#    pmap = pickle.load(f)
+#    pmap = [ml.product_ids_invmap[pmap[i]] for i in range(1, len(pmap) + 1)]
+#with open('spotlight.pkl', 'rb') as f:
+#    spotlight = pickle.load(f)
+#    user_emb = spotlight._net.user_embeddings.weight
+#    item_emb = spotlight._net.item_embeddings.weight
+#    user_bias = spotlight._net.user_biases.weight
+#    item_bias = spotlight._net.item_biases.weight
+#    nid_h.weight.data[1:len(ml.users)+1] = user_emb[1:]
+#    nid_h.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1][pmap] = item_emb[1:]
+#    nid_b.weight.data[1:len(ml.users)+1] = user_bias[1:]
+#    nid_b.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1][pmap] = item_bias[1:]
 
 opt = getattr(torch.optim, args.opt)(
         list(model.parameters()) + list(nid_h.parameters()) + list(nid_b.parameters()),

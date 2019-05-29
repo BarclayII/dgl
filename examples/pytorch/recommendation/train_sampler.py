@@ -34,6 +34,7 @@ parser.add_argument('--cache', type=str, default='/tmp/dataset.pkl',
 parser.add_argument('--dataset', type=str, default='movielens')
 parser.add_argument('--host', type=str, default='localhost')
 parser.add_argument('--port', type=int, default=5902)
+parser.add_argument('--batch-size', type=int, default=32)
 args = parser.parse_args()
 
 print(args)
@@ -69,7 +70,7 @@ neighbors = []
 
 g = ml.g
 n_layers = args.layers
-batch_size = 32
+batch_size = args.batch_size
 
 n_negs = args.n_negs
 hard_neg_prob = args.hard_neg_prob
