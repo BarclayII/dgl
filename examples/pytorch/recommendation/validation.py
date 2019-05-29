@@ -3,12 +3,13 @@ import tqdm
 import numpy as np
 from rec.utils import cuda
 
-def compute_validation_rating(ml, h, model, test):
+def compute_validation_rating(ml, h, b, model, test):
     n_users = len(ml.users)
     n_products = len(ml.products)
 
     h = h.cpu()
-    M = h[:n_users] @ h[n_users:].t()
+    b = b.cpu()
+    M = h[:n_users] @ h[n_users:].t() + b[:n_users] + b[n_users:].t()
     field = 'valid' if not test else 'test'
     ratings = ml.ratings[ml.ratings[field]]
     avg_error = 0
@@ -21,14 +22,15 @@ def compute_validation_rating(ml, h, model, test):
 
     return error
 
-def compute_validation_ml(ml, h, model, test):
+def compute_validation_ml(ml, h, b, model, test):
     rr = []
     validation = not test
     n_users = len(ml.users)
     n_products = len(ml.products)
 
     h = h.cpu()
-    M = h[:n_users] @ h[n_users:].t()
+    b = b.cpu()
+    M = h[:n_users] @ h[n_users:].t() + b[:n_users] + b[n_users:].t()
     p_nids_candidates = ml.p_nids_candidate_valid if not test else ml.p_nids_candidate_test
 
     with torch.no_grad():
@@ -49,9 +51,10 @@ def compute_validation_ml(ml, h, model, test):
     return np.array(rr)
 
 
-def compute_validation_cikm(ml, h, model, test):
+def compute_validation_cikm(ml, h, b, model, test):
     rr = []
     outfile = open('submission.txt' if test else 'verify.txt', 'w')
+    b = b.cpu()
 
     with torch.no_grad():
         queries = ml.test_queries if test else ml.train_queries_with_clicks
@@ -66,16 +69,20 @@ def compute_validation_cikm(ml, h, model, test):
                 unknown_items = [i for i in row['items'].split(',')
                                  if int(i) not in ml.product_ids_invmap]
                 h_dst = h[[i + len(ml.users) for i in items]]
+                b_dst = b[[i + len(ml.users) for i in items]]
 
                 if np.isnan(uid):
                     h_src = 0
+                    b_src = 0
                 else:
                     if int(uid) not in ml.user_ids_invmap:
                         #print('%d: %d not showing up in ml.user_ids_invmap' % (row['queryId'], uid))
                         h_src = 0
+                        b_src = 0
                     else:
                         uid = ml.user_ids_invmap[int(uid)]
                         h_src = h[uid]
+                        b_src = b[uid]
                 if len(unknown_items) > 0:
                     #print('%d: unknown items %s' % (row['queryId'], unknown_items))
                     pass
@@ -88,7 +95,7 @@ def compute_validation_cikm(ml, h, model, test):
                     category = cuda(torch.tensor(int(row['categoryId'])))
                     h_src = h_src + model.emb['category'](category)
 
-                score = (h_dst * h_src).sum(1)
+                score = (h_dst * h_src).sum(1) + b_src + b_dst
                 score_sort_idx = score.sort(descending=True)[1].cpu().numpy()
                 reordered_items = [ml.product_ids[items[i]] for i in score_sort_idx]
                 output = ','.join([str(i) for i in reordered_items] + unknown_items)

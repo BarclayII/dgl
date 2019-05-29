@@ -114,7 +114,7 @@ class PinSage(nn.Module):
 
         nid = nf.layer_parent_nid(layer_id)
         if h is not None:
-            h = h(cuda(nid))
+            h = h(cuda(nid + 1))
         if self.use_feature:
             nf.layers[layer_id].data['h'] = mix_embeddings(
                     h, nf.layers[layer_id].data, self.emb, self.proj)

@@ -113,9 +113,21 @@ model = cuda(PinSage(
     emb=emb,
     ))
 nid_h = cuda(nn.Embedding(1 + len(ml.users) + len(ml.products), n_hidden, padding_idx=0))
+nid_b = cuda(nn.Embedding(1 + len(ml.users) + len(ml.products), 1, padding_idx=0))
+
+with open('spotlight.pkl', 'rb') as f:
+    spotlight = pickle.load(f)
+    user_emb = spotlight._net.user_embeddings.weight
+    item_emb = spotlight._net.item_embeddings.weight
+    user_bias = spotlight._net.user_biases.weight
+    item_bias = spotlight._net.item_biases.weight
+    nid_h.weight.data[1:len(ml.users)+1] = user_emb[1:]
+    nid_h.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1] = item_emb[1:]
+    nid_b.weight.data[1:len(ml.users)+1] = user_bias[1:]
+    nid_b.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1] = item_bias[1:]
 
 opt = getattr(torch.optim, args.opt)(
-        list(model.parameters()) + list(nid_h.parameters()),
+        list(model.parameters()) + list(nid_h.parameters()) + list(nid_b.parameters()),
         lr=args.lr,
         weight_decay=1e-3)
 sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda[args.sched])
@@ -194,7 +206,10 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
             output_idx = nodeflow.map_from_parent_nid(-1, nodeset)
             h = node_output[output_idx]
             h_dst, h_dst_neg = h.split([dst_size, dst_neg_size])
-            h_src = nid_h(cuda(g.nodes[src].data['nid']))
+            h_src = nid_h(cuda(src + 1))
+            b_src = nid_b(cuda(src + 1))
+            b_dst = nid_b(cuda(dst + 1))
+            b_dst_neg = nid_b(cuda(dst_neg + 1)).view(src_size, n_negs)
 
             # For CIKM, add query/category embeddings to user embeddings.
             # This is somehow inspired by TransE
@@ -206,8 +221,8 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
                 h_category = model.emb['category'](category)
                 h_src = h_src + h_tokens + h_category
 
-            pos_score = (h_src * h_dst).sum(1)
-            neg_score = (h_src[:, None] * h_dst_neg.view(src_size, n_negs, -1)).sum(2)
+            pos_score = (h_src * h_dst).sum(1) + b_src + b_dst
+            neg_score = (h_src[:, None] * h_dst_neg.view(src_size, n_negs, -1)).sum(2) + b_src + b_dst_neg
             pos_nlogp = -F.logsigmoid(pos_score)
             neg_nlogp = -F.logsigmoid(-neg_score)
             if args.dataset == 'movielens' or args.dataset == 'movielens1m':
@@ -280,8 +295,9 @@ def runtest(g_prior_edges, validation=True):
     h = torch.cat([
         nid_h(cuda(torch.arange(0, n_users).long() + 1)),
         h], 0)
+    b = nid_b(cuda(torch.arange(1, 1 + n_users + n_items)))
 
-    return compute_validation(ml, h, model, not validation)
+    return compute_validation(ml, h, b, model, not validation)
 
 
 def train():
