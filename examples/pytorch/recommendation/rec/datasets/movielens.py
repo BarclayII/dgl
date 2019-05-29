@@ -66,7 +66,7 @@ class MovieLens(UserProductDataset):
         self.genres = self.products.columns[self.products.dtypes == bool]
 
         # read ratings
-        with open(os.path.join(directory, 'ratings2.dat')) as f:
+        with open(os.path.join(directory, 'ratings.dat')) as f:
             for l in f:
                 user_id, product_id, rating, timestamp = [int(_) for _ in l.split('::')]
                 ratings.append({
