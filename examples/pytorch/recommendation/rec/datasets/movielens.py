@@ -63,9 +63,10 @@ class MovieLens(UserProductDataset):
                         'occupation': occupation,
                         'zip': zip_,
                         })
+            self.users = pd.DataFrame(users).set_index('id').astype('category')
         else:
             users = [{'id': id_} for id_ in ratings['user_id'].unique()]
-        self.users = pd.DataFrame(users).set_index('id').astype('category')
+            self.users = pd.DataFrame(users).set_index('id')
 
         # read products
         with open(os.path.join(directory, 'movies.dat'), encoding='latin1') as f:
