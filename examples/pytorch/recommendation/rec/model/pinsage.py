@@ -5,6 +5,7 @@ import dgl
 import dgl.function as FN
 from .. import randomwalk
 from ..utils import cuda
+from .layers import ScaledEmbedding
 
 def create_embeddings(n_nodes, n_features):
     return nn.Parameter(torch.randn(n_nodes, n_features))
@@ -53,16 +54,21 @@ class PinSageConv(nn.Module):
 
         self.Q = nn.Linear(in_features, hidden_features)
         self.W = nn.Linear(in_features + hidden_features, out_features)
+        self.V = nn.Linear(in_features, hidden_features)
 
         init_weight(self.Q.weight, 'xavier_uniform_', 'leaky_relu')
         init_weight(self.W.weight, 'xavier_uniform_', 'leaky_relu')
+        init_weight(self.V.weight, 'xavier_uniform_', 'leaky_relu')
         init_bias(self.Q.bias)
         init_bias(self.W.bias)
+        init_bias(self.V.bias)
 
     def forward(self, nodes):
         h_agg = safediv(nodes.data['h_agg'], nodes.data['w'][:, None])
         h = nodes.data['h']
         h_concat = torch.cat([h, h_agg], 1)
+        # HSelf
+        #h_new = F.leaky_relu(self.W(h_concat) + self.V(nodes.data['h_x']))
         h_new = F.leaky_relu(self.W(h_concat))
         h_new = safediv(h_new, h_new.norm(dim=1, keepdim=True))
         return {'h': h_new}
@@ -91,42 +97,51 @@ class PinSage(nn.Module):
 
             for key, scheme in G.node_attr_schemes().items():
                 if scheme.dtype == torch.int64:
-                    self.emb[key] = emb.get(key, nn.Embedding(
+                    self.emb[key] = emb.get(key, ScaledEmbedding(
                             G.ndata[key].max().item() + 1,
                             self.in_features,
                             padding_idx=0))
                 elif scheme.dtype == torch.float32:
-                    self.proj[key] = proj.get(key, nn.Sequential(
-                            nn.Linear(scheme.shape[0], self.in_features),
-                            nn.LeakyReLU(),
-                            ))
+                    w = nn.Linear(scheme.shape[0], self.in_features)
+                    init_weight(w.weight, 'xavier_uniform_', 'leaky_relu')
+                    init_bias(w.bias)
+                    self.proj[key] = proj.get(key, nn.Sequential(w, nn.LeakyReLU()))
 
     msg = [FN.src_mul_edge('h_q', 'ppr_weight', 'h_w'),
            FN.copy_edge('ppr_weight', 'w')]
     red = [FN.sum('h_w', 'h_agg'), FN.sum('w', 'w')]
 
     
-    def forward(self, nf, h):
+    def forward(self, nf, h_emb):
         '''
         nf: NodeFlow.
         '''
-        layer_id = 0 if self.n_layers > 0 else -1
-
-        nid = nf.layer_parent_nid(layer_id)
-        if h is not None:
-            h = h(cuda(nid + 1))
-        if self.use_feature:
-            nf.layers[layer_id].data['h'] = mix_embeddings(
-                    h, nf.layers[layer_id].data, self.emb, self.proj)
-        else:
-            nf.layers[layer_id].data['h'] = cuda(h)
-
         if self.n_layers == 0:
-            return nf.layers[layer_id].data['h']
+            nid = nf.layer_parent_nid(-1)
+            h = h_emb(cuda(nid + 1)) if h_emb is not None else None
+            if self.use_feature:
+                nf.layers[-1].data['h'] = mix_embeddings(
+                        h, nf.layers[-1].data, self.emb, self.proj)
+            else:
+                nf.layers[-1].data['h'] = cuda(h)
+            return nf.layers[-1].data['h']
+
+        nids = [nf.layer_parent_nid(i) for i in range(nf.num_layers)]
+        nids = torch.cat(nids)
+        h = h_emb(cuda(nids + 1)) if h_emb is not None else None
+        for i in range(nf.num_layers):
+            hi = h[nf.layer_offsets(i):nf.layer_offsets(i + 1)]
+            if self.use_feature:
+                nf.layers[i].data['h_x'] = mix_embeddings(
+                        hi, nf.layers[i].data, self.emb, self.proj)
+            else:
+                nf.layers[i].data['h_x'] = cuda(hi)
+        nf.layers[0].data['h'] = nf.layers[0].data['h_x']
 
         for i in range(nf.num_blocks):
-            parent_nid = nf.layer_parent_nid(i + 1)
-            result = nf.layers[i].data['h'][nf.map_from_parent_nid(i, parent_nid)]
+            parent_nid_1 = nf.layer_parent_nid(i + 1)
+            parent_nid_0 = nf.layer_parent_nid(i)
+            result = nf.layers[i].data['h'][nf.map_from_parent_nid(i, parent_nid_1)]
             nf.layers[i + 1].data['h'] = result
             result = self.convs[i].project(nf.layers[i].data['h'])
             nf.layers[i].data['h_q'] = result
@@ -136,30 +151,3 @@ class PinSage(nn.Module):
         assert (result != result).sum() == 0
         return result
 
-
-class BaseModel(nn.Module):
-    def __init__(self, feature_size, use_feature=False, G=None, emb={}, proj={}):
-        super(BaseModel, self).__init__()
-        self.feature_size = feature_size
-
-        if use_feature:
-            self.emb = nn.ModuleDict()
-            self.proj = nn.ModuleDict()
-
-            for key, scheme in G.node_attr_schemes().items():
-                if scheme.dtype == torch.int64:
-                    self.emb[key] = emb.get(key, nn.Embedding(
-                            G.ndata[key].max().item() + 1,
-                            self.in_features,
-                            padding_idx=0))
-                elif scheme.dtype == torch.float32:
-                    self.proj[key] = proj.get(key, nn.Sequential(
-                            nn.Linear(scheme.shape[0], self.in_features),
-                            nn.LeakyReLU(),
-                            ))
-
-        self.G = G
-
-    def forward(self, nodes):
-        h = mix_embeddings(None, self.G.nodes[nodes].data, self.emb, self.proj)
-        return h
