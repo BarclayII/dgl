@@ -8,7 +8,7 @@ class UserProductDataset(object):
         df_new = df.copy()
         df_new['prob'] = -1
 
-        df_new_sub = (df_new['product_count'] >= filter_counts).nonzero()[0]
+        df_new_sub = (df_new['product_count'] >= filter_counts).to_numpy().nonzero()[0]
         prob = np.linspace(0, 1, df_new_sub.shape[0], endpoint=False)
         if timestamp is not None and timestamp in df_new.columns:
             df_new = df_new.iloc[df_new_sub].sort_values(timestamp)
