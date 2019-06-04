@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import tqdm
 from rec.model.pinsage import PinSage
+from rec.model.layers import ScaledEmbedding, ZeroEmbedding
 from rec.utils import cuda
 from rec.comm.receiver import NodeFlowReceiver
 from dgl import DGLGraph
@@ -18,6 +19,7 @@ import os
 parser = argparse.ArgumentParser()
 parser.add_argument('--opt', type=str, default='SGD')
 parser.add_argument('--lr', type=float, default=1)
+parser.add_argument('--n', type=float, default=500)
 parser.add_argument('--sched', type=str, default='none',
                     help='learning rate scheduler (none or decay)')
 parser.add_argument('--layers', type=int, default=2)
@@ -35,6 +37,7 @@ parser.add_argument('--train-port', type=int, default=5902)
 parser.add_argument('--valid-port', type=int, default=5901)
 parser.add_argument('--num-samplers', type=int, default=8)
 parser.add_argument('--batch-size', type=int, default=32)
+parser.add_argument('--l2', type=float, default=1e-9)
 args = parser.parse_args()
 
 print(args)
@@ -113,41 +116,49 @@ model = cuda(PinSage(
     G=g,
     emb=emb,
     ))
-nid_h = cuda(nn.Embedding(1 + len(ml.users) + len(ml.products), n_hidden, padding_idx=0))
-nid_b = cuda(nn.Embedding(1 + len(ml.users) + len(ml.products), 1, padding_idx=0))
+nid_h = cuda(ScaledEmbedding(1 + len(ml.users) + len(ml.products), n_hidden, padding_idx=0))
+nid_m = cuda(ScaledEmbedding(1 + len(ml.users) + len(ml.products), n_hidden, padding_idx=0))
+nid_b = cuda(ZeroEmbedding(1 + len(ml.users) + len(ml.products), 1, padding_idx=0))
 
 #with open('pmap.pkl', 'rb') as f:
 #    pmap = pickle.load(f)
 #    pmap = [ml.product_ids_invmap[pmap[i]] for i in range(1, len(pmap) + 1)]
-#with open('spotlight.pkl', 'rb') as f:
+#with open('spotlight_init.pkl', 'rb') as f:
 #    spotlight = pickle.load(f)
 #    user_emb = spotlight._net.user_embeddings.weight
 #    item_emb = spotlight._net.item_embeddings.weight
+#    item_emb2 = spotlight._net.item_embeddings2.weight
 #    user_bias = spotlight._net.user_biases.weight
 #    item_bias = spotlight._net.item_biases.weight
-#    nid_h.weight.data[1:len(ml.users)+1] = user_emb[1:]
-#    nid_h.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1][pmap] = item_emb[1:]
-#    nid_b.weight.data[1:len(ml.users)+1] = user_bias[1:]
-#    nid_b.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1][pmap] = item_bias[1:]
+#    nid_h.weight.data[1:len(ml.users)+1] = user_emb[ml.user_ids]
+#    nid_h.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1] = item_emb[ml.product_ids]
+#    nid_m.weight.data[1:len(ml.users)+1] = user_emb[ml.user_ids]
+#    nid_m.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1] = item_emb2[ml.product_ids]
+#    nid_b.weight.data[1:len(ml.users)+1] = user_bias[ml.user_ids]
+#    nid_b.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1] = item_bias[ml.product_ids]
 
 opt = getattr(torch.optim, args.opt)(
-        list(model.parameters()) + list(nid_h.parameters()) + list(nid_b.parameters()),
+        list(model.parameters()) +
+        list(nid_h.parameters()) +
+        list(nid_b.parameters()) +
+        list(nid_m.parameters()),
         lr=args.lr,
-        weight_decay=1e-3)
+        weight_decay=args.l2)
 sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda[args.sched])
 
 
 def cast_ppr_weight(nodeflow):
     for i in range(nodeflow.num_blocks):
-        nodeflow.apply_block(i, lambda x: {'ppr_weight': cuda(x.data['ppr_weight']).float()})
+        #nodeflow.apply_block(i, lambda x: {'ppr_weight': cuda(x.data['ppr_weight']).float()})
+        nodeflow.blocks[i].data['ppr_weight'] = cuda(torch.ones(nodeflow.block_size(i)))
 
 
 def forward(model, nodeflow, train=True):
     if train:
-        return model(nodeflow, nid_h)
+        return model(nodeflow, nid_m)
     else:
         with torch.no_grad():
-            return model(nodeflow, nid_h)
+            return model(nodeflow, nid_m)
 
 
 train_sampler = NodeFlowReceiver(args.train_port)
@@ -187,18 +198,27 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
             # find the source nodes (users), destination nodes (positive products), and
             # negative destination nodes (negative products) in *original* graph.
             edges, src, dst, dst_neg = aux_data[:4]
-            #dst_neg = np.random.randint(len(ml.users), len(ml.users) + len(ml.products), batch_size * n_negs)
             edges = torch.LongTensor(edges)
             src = torch.LongTensor(src)
             dst = torch.LongTensor(dst)
+            #dst_neg = np.random.randint(len(ml.users), len(ml.users) + len(ml.products), batch_size * n_negs)
             dst_neg = torch.LongTensor(dst_neg)
+
+            #osrc = np.loadtxt('user.txt')
+            #odst = np.loadtxt('item.txt')
+            #src = torch.LongTensor([ml.user_ids_invmap[i] for i in osrc])
+            #dst = torch.LongTensor([ml.product_ids_invmap[i] + len(ml.users) for i in odst])
+            #edges = g.edge_ids(src, dst)[2]
+
             src_size = dst_size = src.shape[0]
             dst_neg_size = dst_neg.shape[0]
             count += src_size
 
             # Generate a NodeFlow given the sources/destinations/negative destinations.  We need
             # GCN output of those nodes.
+            # NoUserN
             nodeset = torch.cat([dst, dst_neg])
+            #nodeset = torch.cat([src, dst, dst_neg])
             # SAMPLING PROCESS END
             # copy features from parent graph
             nodeflow.copy_from_parent()
@@ -209,11 +229,19 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
             node_output = forward(model, nodeflow, train)
             output_idx = nodeflow.map_from_parent_nid(-1, nodeset)
             h = node_output[output_idx]
+            # NoUserN
             h_dst, h_dst_neg = h.split([dst_size, dst_neg_size])
             h_src = nid_h(cuda(src + 1))
-            b_src = nid_b(cuda(src + 1))
-            b_dst = nid_b(cuda(dst + 1))
-            b_dst_neg = nid_b(cuda(dst_neg + 1)).view(src_size, n_negs)
+            #h_src, h_dst, h_dst_neg = h.split([src_size, dst_size, dst_neg_size])
+
+            # Residual
+            #h_dst = h_dst + nid_h(cuda(dst + 1))
+            # Residual & UserN
+            #h_src = h_src + nid_h(cuda(src + 1))
+
+            b_src = nid_b(cuda(src + 1)).squeeze()
+            b_dst = nid_b(cuda(dst + 1)).squeeze()
+            b_dst_neg = nid_b(cuda(dst_neg + 1)).view(src_size, n_negs).squeeze()
 
             # For CIKM, add query/category embeddings to user embeddings.
             # This is somehow inspired by TransE
@@ -226,7 +254,7 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
                 h_src = h_src + h_tokens + h_category
 
             pos_score = (h_src * h_dst).sum(1) + b_src + b_dst
-            neg_score = (h_src[:, None] * h_dst_neg.view(src_size, n_negs, -1)).sum(2) + b_src + b_dst_neg
+            neg_score = (h_src[:, None] * h_dst_neg.view(src_size, n_negs, -1)).sum(2) + b_src[:, None] + b_dst_neg
             pos_nlogp = -F.logsigmoid(pos_score)
             neg_nlogp = -F.logsigmoid(-neg_score)
             if args.dataset == 'movielens' or args.dataset == 'movielens1m':
@@ -296,6 +324,11 @@ def runtest(g_prior_edges, validation=True):
     auxs = torch.cat(auxs, 0)
     assert (np.sort(auxs.numpy()) == np.arange(n_items)).all()
     h = h[auxs.sort()[1]]     # reorder h
+    # Residual & NoUserN
+    #h = h + nid_h(cuda(torch.arange(n_users, n_users + n_items) + 1))
+    # Residual
+    #h = h + nid_h(cuda(torch.arange(1, 1 + n_users + n_items)))
+    # NoUserN
     h = torch.cat([
         nid_h(cuda(torch.arange(0, n_users).long() + 1)),
         h], 0)
@@ -306,7 +339,8 @@ def runtest(g_prior_edges, validation=True):
 
 def train():
     global opt, sched
-    best_mrr = 0
+    best_mrr = 10
+    best_test = 0
 
     cache_mask_file = cache_file + '.mask'
     if os.path.exists(cache_mask_file):
@@ -319,20 +353,22 @@ def train():
 
     edge_perm = np.array_split(np.random.permutation(g_train_edges.shape[0]), 1)
     i = -1
-    for epoch in range(500):
+    for epoch in range(args.n):
         print('Epoch %d validation' % epoch)
 
         if 1:
             with torch.no_grad():
                 valid_mrr = runtest(g_prior_train_edges, True)
-                if best_mrr < valid_mrr.mean():
-                    best_mrr = valid_mrr.mean()
-                    torch.save(model.state_dict(), 'model.pt')
             print(pd.Series(valid_mrr).describe())
             print('Epoch %d test' % epoch)
             with torch.no_grad():
                 test_mrr = runtest(g_prior_train_edges, False)
+            if best_mrr > valid_mrr.mean():
+                best_mrr = valid_mrr.mean()
+                best_test = test_mrr.mean()
+                torch.save(model.state_dict(), 'model.pt')
             print(pd.Series(test_mrr).describe())
+            print('Best valid:', np.sqrt(best_mrr), np.sqrt(best_test))
 
         if i is None or i == 1:
             i = 0
@@ -348,6 +384,8 @@ def train():
             sched = torch.optim.lr_scheduler.LambdaLR(opt, sched_lambda['decay'])
         elif epoch < args.sgd_switch:
             sched.step()
+
+    print('Best valid:', np.sqrt(best_mrr), np.sqrt(best_test))
 
 
 if __name__ == '__main__':
