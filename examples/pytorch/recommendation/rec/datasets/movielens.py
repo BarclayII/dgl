@@ -64,7 +64,7 @@ class MovieLens(UserProductDataset):
                         'zip': zip_,
                         })
         else:
-            users = [{'id': id_} for id_ in ratings['user_id'].unique().values]
+            users = [{'id': id_} for id_ in ratings['user_id'].unique()]
         self.users = pd.DataFrame(users).set_index('id').astype('category')
 
         # read products
