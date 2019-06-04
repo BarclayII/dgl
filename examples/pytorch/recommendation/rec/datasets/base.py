@@ -4,15 +4,20 @@ from .. import randomwalk
 import tqdm
 
 class UserProductDataset(object):
-    def split_user(self, df, filter_counts=0):
+    def split_user(self, df, filter_counts=0, timestamp=None):
         df_new = df.copy()
         df_new['prob'] = -1
 
         df_new_sub = (df_new['product_count'] >= filter_counts).nonzero()[0]
         prob = np.linspace(0, 1, df_new_sub.shape[0], endpoint=False)
-        np.random.shuffle(prob)
-        df_new['prob'].iloc[df_new_sub] = prob
-        return df_new
+        if timestamp is not None:
+            df_new = df_new.iloc[df_new_sub].sort_values(timestamp)
+            df_new['prob'] = prob
+            return df_new
+        else:
+            np.random.shuffle(prob)
+            df_new['prob'].iloc[df_new_sub] = prob
+            return df_new
 
     def data_split(self, ratings):
         ratings = ratings.groupby('user_id', group_keys=False).apply(

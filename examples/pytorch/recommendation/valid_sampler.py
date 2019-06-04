@@ -8,7 +8,7 @@ from rec.model.pinsage import PinSage
 from rec.utils import cuda
 from rec.comm.sender import NodeFlowSender
 from dgl import DGLGraph
-from dgl.contrib.sampling import PPRBipartiteSingleSidedNeighborSampler
+from dgl.contrib.sampling import PPRBipartiteSingleSidedNeighborSampler, NeighborSampler
 from validation import *
 
 import argparse
@@ -97,6 +97,7 @@ g_prior_src, g_prior_dst = g.find_edges(g_prior_train_edges)
 g_prior = DGLGraph(multigraph=True)
 g_prior.add_nodes(g.number_of_nodes())
 g_prior.add_edges(g_prior_src, g_prior_dst)
+g_prior.readonly()
 if args.dataset == 'cikm':
     item_query_src, item_query_dst = g.find_edges(list(range(len(ml.ratings) * 2, g.number_of_edges())))
     g_prior.add_edges(item_query_src, item_query_dst)
@@ -106,20 +107,29 @@ sender = NodeFlowSender(args.host, args.port)
 
 for epoch in range(500):
     seeds = torch.LongTensor(sender.recv()) + n_users
-    sampler = PPRBipartiteSingleSidedNeighborSampler(
+    #sampler = PPRBipartiteSingleSidedNeighborSampler(
+    #        g_prior,
+    #        batch_size,
+    #        n_layers + 1,
+    #        10,
+    #        50,
+    #        max_visit_counts=3,
+    #        max_frequent_visited_nodes=10,
+    #        seed_nodes=seeds,
+    #        restart_prob=0.5,
+    #        prefetch=False,
+    #        add_self_loop=True,
+    #        shuffle=False,
+    #        num_workers=25)
+    sampler = NeighborSampler(
             g_prior,
             batch_size,
-            n_layers + 1,
-            10,
-            50,
-            max_visit_counts=3,
-            max_frequent_visited_nodes=10,
+            5,
+            n_layers,
             seed_nodes=seeds,
-            restart_prob=0.5,
-            prefetch=False,
+            prefetch=True,
             add_self_loop=True,
-            shuffle=False,
-            num_workers=25)
+            num_workers=20)
 
     with tqdm.tqdm(sampler) as tq:
         for i, nodeflow in enumerate(tq):
