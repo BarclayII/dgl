@@ -33,7 +33,11 @@ class MovieLens(UserProductDataset):
         # read ratings
         with open(os.path.join(directory, 'ratings.dat')) as f:
             for l in f:
-                user_id, product_id, rating, timestamp = [int(_) for _ in l.split('::')]
+                user_id, product_id, rating, timestamp = l.split('::')
+                user_id = int(user_id)
+                product_id = int(product_id)
+                rating = float(rating)
+                timestamp = int(timestamp)
                 ratings.append({
                     'user_id': user_id,
                     'product_id': product_id,
