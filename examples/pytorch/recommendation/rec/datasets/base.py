@@ -10,7 +10,7 @@ class UserProductDataset(object):
 
         df_new_sub = (df_new['product_count'] >= filter_counts).nonzero()[0]
         prob = np.linspace(0, 1, df_new_sub.shape[0], endpoint=False)
-        if timestamp is not None:
+        if timestamp is not None and timestamp in df_new.columns:
             df_new = df_new.iloc[df_new_sub].sort_values(timestamp)
             df_new['prob'] = prob
             return df_new
@@ -21,7 +21,7 @@ class UserProductDataset(object):
 
     def data_split(self, ratings):
         ratings = ratings.groupby('user_id', group_keys=False).apply(
-                partial(self.split_user, filter_counts=10))
+                partial(self.split_user, filter_counts=10, timestamp='timestamp'))
         ratings['train'] = ratings['prob'] <= 0.8
         ratings['valid'] = (ratings['prob'] > 0.8) & (ratings['prob'] <= 0.9)
         ratings['test'] = ratings['prob'] > 0.9
@@ -49,7 +49,7 @@ class UserProductDataset(object):
     def generate_mask(self):
         while True:
             ratings = self.ratings.groupby('user_id', group_keys=False).apply(
-                    partial(self.split_user, filter_counts=5))
+                    partial(self.split_user, filter_counts=5, timestamp='timestamp'))
             prior_prob = ratings['prob'].values
             for i in range(5):
                 train_mask = (prior_prob >= 0.2 * i) & (prior_prob < 0.2 * (i + 1))
