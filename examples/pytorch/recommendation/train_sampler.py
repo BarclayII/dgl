@@ -48,6 +48,11 @@ elif args.dataset == 'movielens1m':
     ml = MovieLens('/efs/quagan/movielens/ml-1m')
     with open(cache_file, 'wb') as f:
         pickle.dump(ml, f, protocol=4)
+elif args.dataset == 'movielens10m':
+    from rec.datasets.movielens import MovieLens
+    ml = MovieLens('/efs/quagan/movielens/ml-10M100K')
+    with open(cache_file, 'wb') as f:
+        pickle.dump(ml, f, protocol=4)
 elif args.dataset == 'movielens':
     from rec.datasets.movielens import MovieLens20M
     ml = MovieLens20M('/efs/quagan/movielens/ml-20m')

@@ -30,17 +30,37 @@ class MovieLens(UserProductDataset):
         products = []
         ratings = []
 
-        # read users
-        with open(os.path.join(directory, 'users.dat')) as f:
+        # read ratings
+        with open(os.path.join(directory, 'ratings.dat')) as f:
             for l in f:
-                id_, gender, age, occupation, zip_ = l.strip().split('::')
-                users.append({
-                    'id': int(id_),
-                    'gender': gender,
-                    'age': age,
-                    'occupation': occupation,
-                    'zip': zip_,
+                user_id, product_id, rating, timestamp = [int(_) for _ in l.split('::')]
+                ratings.append({
+                    'user_id': user_id,
+                    'product_id': product_id,
+                    'rating': rating,
+                    'timestamp': timestamp,
                     })
+        ratings = pd.DataFrame(ratings)
+        product_count = ratings['product_id'].value_counts()
+        product_count.name = 'product_count'
+        ratings = ratings.join(product_count, on='product_id')
+        self.ratings = ratings
+
+        # read users
+        user_file = os.path.join(directory, 'users.dat')
+        if os.path.exists(user_file):
+            with open(user_file) as f:
+                for l in f:
+                    id_, gender, age, occupation, zip_ = l.strip().split('::')
+                    users.append({
+                        'id': int(id_),
+                        'gender': gender,
+                        'age': age,
+                        'occupation': occupation,
+                        'zip': zip_,
+                        })
+        else:
+            users = [{'id': id_} for id_ in ratings['user_id'].unique().values]
         self.users = pd.DataFrame(users).set_index('id').astype('category')
 
         # read products
@@ -64,22 +84,6 @@ class MovieLens(UserProductDataset):
                 .fillna(False)
                 .astype({'year': 'category'}))
         self.genres = self.products.columns[self.products.dtypes == bool]
-
-        # read ratings
-        with open(os.path.join(directory, 'ratings.dat')) as f:
-            for l in f:
-                user_id, product_id, rating, timestamp = [int(_) for _ in l.split('::')]
-                ratings.append({
-                    'user_id': user_id,
-                    'product_id': product_id,
-                    'rating': rating,
-                    'timestamp': timestamp,
-                    })
-        ratings = pd.DataFrame(ratings)
-        product_count = ratings['product_id'].value_counts()
-        product_count.name = 'product_count'
-        ratings = ratings.join(product_count, on='product_id')
-        self.ratings = ratings
 
         # drop users and products which do not exist in ratings
         self.users = self.users[self.users.index.isin(self.ratings['user_id'])]

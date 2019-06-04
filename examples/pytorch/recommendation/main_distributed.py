@@ -51,6 +51,11 @@ elif args.dataset == 'movielens1m':
     ml = MovieLens('/efs/quagan/movielens/ml-1m')
     with open(cache_file, 'wb') as f:
         pickle.dump(ml, f, protocol=4)
+elif args.dataset == 'movielens10m':
+    from rec.datasets.movielens import MovieLens
+    ml = MovieLens('/efs/quagan/movielens/ml-10M100K')
+    with open(cache_file, 'wb') as f:
+        pickle.dump(ml, f, protocol=4)
 elif args.dataset == 'movielens':
     from rec.datasets.movielens import MovieLens20M
     ml = MovieLens20M('/efs/quagan/movielens/ml-20m')
@@ -76,6 +81,7 @@ if args.dataset == 'cikm':
 
 _compute_validation = {
         'movielens1m': compute_validation_rating,
+        'movielens10m': compute_validation_rating,
         'movielens': compute_validation_ml,
         'reddit': compute_validation_ml,
         'cikm': compute_validation_cikm,
@@ -257,7 +263,7 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
             neg_score = (h_src[:, None] * h_dst_neg.view(src_size, n_negs, -1)).sum(2) + b_src[:, None] + b_dst_neg
             pos_nlogp = -F.logsigmoid(pos_score)
             neg_nlogp = -F.logsigmoid(-neg_score)
-            if args.dataset == 'movielens' or args.dataset == 'movielens1m':
+            if args.dataset.startswith('movielens'):
                 loss = (pos_score - cuda(g.edges[edges].data['rating'])) ** 2
                 loss = loss.mean()
                 acc = loss
