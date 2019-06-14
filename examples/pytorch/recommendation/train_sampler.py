@@ -82,8 +82,12 @@ n_items = len(ml.product_ids)
 
 def refresh_mask():
     ml.refresh_mask()
-    g_prior_edges = g.filter_edges(lambda edges: (edges.data['prior'] | edges.data['train']))
-    g_train_edges = g.filter_edges(lambda edges: (edges.data['prior'] | edges.data['train']) & ~edges.data['inv'])
+    if args.dataset == 'taobao':
+        g_prior_edges = g.filter_edges(lambda edges: edges.data['prior'])
+        g_train_edges = g.filter_edges(lambda edges: edges.data['train'] & ~edges.data['inv'])
+    else:
+        g_prior_edges = g.filter_edges(lambda edges: (edges.data['prior'] | edges.data['train']))
+        g_train_edges = g.filter_edges(lambda edges: (edges.data['prior'] | edges.data['train']) & ~edges.data['inv'])
     g_prior_train_edges = g.filter_edges(
             lambda edges: edges.data['prior'] | edges.data['train'])
     return g_prior_edges, g_train_edges, g_prior_train_edges
@@ -121,20 +125,18 @@ else:
         pickle.dump((g_prior_edges, g_train_edges, g_prior_train_edges), f)
 
 
-
 sender = NodeFlowSender(args.host, args.port)
+g_prior_src, g_prior_dst = g.find_edges(g_prior_edges)
+g_prior = DGLGraph(multigraph=True)
+g_prior.add_nodes(g.number_of_nodes())
+g_prior.add_edges(g_prior_src, g_prior_dst)
+g_prior.ndata.update({k: v for k, v in g.ndata.items()})
+if args.dataset == 'cikm':
+    item_query_src, item_query_dst = g.find_edges(list(range(len(ml.ratings) * 2, g.number_of_edges())))
+    g_prior.add_edges(item_query_src, item_query_dst)
+g_prior.readonly()
 
 for epoch in range(500):
-    g_prior_src, g_prior_dst = g.find_edges(g_prior_edges)
-    g_prior = DGLGraph(multigraph=True)
-    g_prior.add_nodes(g.number_of_nodes())
-    g_prior.add_edges(g_prior_src, g_prior_dst)
-    g_prior.ndata.update({k: v for k, v in g.ndata.items()})
-    g_prior.readonly()
-    if args.dataset == 'cikm':
-        item_query_src, item_query_dst = g.find_edges(list(range(len(ml.ratings) * 2, g.number_of_edges())))
-        g_prior.add_edges(item_query_src, item_query_dst)
-
     # prepare seed nodes
     #edge_shuffled = g_train_edges[torch.randperm(g_train_edges.shape[0])]
     edge_shuffled = g_train_edges[torch.LongTensor(sender.recv())]
