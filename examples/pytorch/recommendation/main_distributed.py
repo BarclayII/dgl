@@ -46,31 +46,27 @@ cache_file = args.cache
 if os.path.exists(cache_file):
     with open(cache_file, 'rb') as f:
         ml = pickle.load(f)
-elif args.dataset == 'movielens1m':
-    from rec.datasets.movielens import MovieLens
-    ml = MovieLens('/efs/quagan/movielens/ml-1m')
-    with open(cache_file, 'wb') as f:
-        pickle.dump(ml, f, protocol=4)
-elif args.dataset == 'movielens10m':
-    from rec.datasets.movielens import MovieLens
-    ml = MovieLens('/efs/quagan/movielens/ml-10M100K')
-    with open(cache_file, 'wb') as f:
-        pickle.dump(ml, f, protocol=4)
-elif args.dataset == 'movielens':
-    from rec.datasets.movielens import MovieLens20M
-    ml = MovieLens20M('/efs/quagan/movielens/ml-20m')
-    with open(cache_file, 'wb') as f:
-        pickle.dump(ml, f, protocol=4)
-elif args.dataset == 'cikm':
-    from rec.datasets.cikm import CIKM
-    ml = CIKM('/efs/quagan/diginetica/dataset-train')
-    with open(cache_file, 'wb') as f:
-        pickle.dump(ml, f, protocol=4)
 else:
-    from rec.datasets.reddit import Reddit
-    ml = Reddit('/efs/quagan/2018/subm-users.pkl')
-    if args.hard_neg_prob > 0:
-        raise ValueError('Hard negative examples currently not supported on reddit.')
+    if args.dataset == 'taobao':
+        from rec.datasets.taobao import Taobao
+        ml = Taobao('/efs/quagan/taobao/ZhuData')
+    elif args.dataset == 'movielens1m':
+        from rec.datasets.movielens import MovieLens
+        ml = MovieLens('/efs/quagan/movielens/ml-1m')
+    elif args.dataset == 'movielens10m':
+        from rec.datasets.movielens import MovieLens
+        ml = MovieLens('/efs/quagan/movielens/ml-10M100K')
+    elif args.dataset == 'movielens':
+        from rec.datasets.movielens import MovieLens20M
+        ml = MovieLens20M('/efs/quagan/movielens/ml-20m')
+    elif args.dataset == 'cikm':
+        from rec.datasets.cikm import CIKM
+        ml = CIKM('/efs/quagan/diginetica/dataset-train')
+    else:
+        from rec.datasets.reddit import Reddit
+        ml = Reddit('/efs/quagan/2018/subm-users.pkl')
+        if args.hard_neg_prob > 0:
+            raise ValueError('Hard negative examples currently not supported on reddit.')
     with open(cache_file, 'wb') as f:
         pickle.dump(ml, f, protocol=4)
 
