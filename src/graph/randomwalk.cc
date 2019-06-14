@@ -146,8 +146,9 @@ RandomWalkTraces GenericRandomWalkWithRestart(
           break;
 
         if ((next = walker(gptr, &random_seed, cur)) == DGL_INVALID_ID)
-          LOG(FATAL) << "no successors from vertex " << cur;
-        cur = next;
+          /*LOG(INFO) << "no successors from vertex " << cur*/;
+        else
+          cur = next;
         vertices.push_back(cur);
       }
 

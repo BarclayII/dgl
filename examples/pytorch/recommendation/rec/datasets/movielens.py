@@ -91,10 +91,9 @@ class MovieLens(UserProductDataset):
         self.genres = self.products.columns[self.products.dtypes == bool]
 
         # drop users and products which do not exist in ratings
+        self.ratings = self.data_split(self.ratings)
         self.users = self.users[self.users.index.isin(self.ratings['user_id'])]
         self.products = self.products[self.products.index.isin(self.ratings['product_id'])]
-
-        self.ratings = self.data_split(self.ratings)
         self.build_graph()
         #self.find_neighbors(0.2, 2000, 1000)
 
@@ -258,7 +257,7 @@ class MovieLens20M(MovieLens):
         self.ratings = ratings
 
         self.users = pd.DataFrame({'id': ratings['user_id'].unique()})
-        self.users = self.users.set_index('id').astype('category')  # assign user ID as feature
+        self.users = self.users.set_index('id')
 
         self.products = pd.read_csv(os.path.join(directory, 'movies.csv'))
         self.products['genres'] = self.products['genres'].map(lambda x: set(x.split('|')))
@@ -267,9 +266,9 @@ class MovieLens20M(MovieLens):
             self.products[genre] = self.products['genres'].map(lambda x: genre in x)
         self.products = self.products.drop('genres', axis=1).set_index('movieId')
 
+        self.ratings = self.data_split(self.ratings)
         self.users = self.users[self.users.index.isin(self.ratings['user_id'])]
         self.products = self.products[self.products.index.isin(self.ratings['product_id'])]
 
-        self.ratings = self.data_split(self.ratings)
         self.build_graph()
         #self.find_neighbors(0.2, 2000, 1000)

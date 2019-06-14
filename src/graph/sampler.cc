@@ -141,13 +141,18 @@ void NegateArray(const std::vector<size_t> &nz_idxs,
 /*
  * Uniform sample vertices from a list of vertices.
  */
-void GetUniformSample(const dgl_id_t* edge_id_list,
+
+void GetUniformSample(const int64_t* indptr,
+                      const dgl_id_t* edge_id_list,
                       const dgl_id_t* vid_list,
-                      const size_t ver_len,
+                      const size_t dst_id,
                       const size_t max_num_neighbor,
                       std::vector<dgl_id_t>* out_ver,
                       std::vector<dgl_id_t>* out_edge,
                       unsigned int* seed) {
+  size_t ver_len = indptr[dst_id + 1] - indptr[dst_id];
+  edge_id_list = edge_id_list + *(indptr + dst_id);
+  vid_list = vid_list + *(indptr + dst_id);
   // Copy vid_list to output
   if (ver_len <= max_num_neighbor) {
     out_ver->insert(out_ver->end(), vid_list, vid_list + ver_len);
@@ -178,6 +183,34 @@ void GetUniformSample(const dgl_id_t* edge_id_list,
     out_edge->push_back(edge_id_list[idx]);
   }
 }
+
+
+/*
+void GetUniformSample(const int64_t* indptr,
+                      const dgl_id_t* edge_id_list,
+                      const dgl_id_t* vid_list,
+                      const size_t dst_id,
+                      const size_t max_num_neighbor,
+                      std::vector<dgl_id_t>* out_ver,
+                      std::vector<dgl_id_t>* out_edge,
+                      unsigned int* seed) {
+  const dgl_id_t *cur_vid_list, *cur_edge_id_list;
+  for (int i = 0; i < max_num_neighbor; ++i) {
+    dgl_id_t cur_id = dst_id;
+    size_t pos;
+    for (int j = 0; j < 2; ++j) {
+      cur_vid_list = vid_list + *(indptr + cur_id);
+      cur_edge_id_list = edge_id_list + *(indptr + cur_id);
+      size_t ver_len = indptr[cur_id + 1] - indptr[cur_id];
+      pos = rand() % ver_len;
+      cur_id = cur_vid_list[pos];
+    }
+    out_ver->push_back(cur_vid_list[pos]);
+    out_edge->push_back(cur_edge_id_list[pos]);
+  }
+}
+*/
+
 
 /*
  * Non-uniform sample via ArrayHeap
@@ -272,9 +305,10 @@ NodeFlow SampleSubgraph(const ImmutableGraph *graph,
       tmp_sampled_edge_list.clear();
       dgl_id_t ver_len = *(indptr+dst_id+1) - *(indptr+dst_id);
       if (probability == nullptr) {  // uniform-sample
-        GetUniformSample(val_list + *(indptr + dst_id),
-                         col_list + *(indptr + dst_id),
-                         ver_len,
+        GetUniformSample(indptr,
+                         val_list,
+                         col_list,
+                         dst_id,
                          num_neighbor,
                          &tmp_sampled_src_list,
                          &tmp_sampled_edge_list,
