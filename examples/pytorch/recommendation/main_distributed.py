@@ -38,6 +38,7 @@ parser.add_argument('--valid-port', type=int, default=5901)
 parser.add_argument('--num-samplers', type=int, default=8)
 parser.add_argument('--batch-size', type=int, default=32)
 parser.add_argument('--l2', type=float, default=1e-9)
+parser.add_argument('--loss', type=str, default='bpr')
 args = parser.parse_args()
 
 print(args)
@@ -53,7 +54,7 @@ else:
     elif args.dataset == 'movielens1m':
         from rec.datasets.movielens import MovieLens
         ml = MovieLens('/efs/quagan/movielens/ml-1m')
-    elif args.dataset == 'movielens10m':
+    elif args.dataset in ['movielens10m', 'movielens10m-imp']:
         from rec.datasets.movielens import MovieLens
         ml = MovieLens('/efs/quagan/movielens/ml-10M100K')
     elif args.dataset == 'movielens':
@@ -78,7 +79,9 @@ if args.dataset == 'cikm':
 _compute_validation = {
         'movielens1m': compute_validation_rating,
         'movielens10m': compute_validation_rating,
+        'movielens10m-imp': compute_validation_ml,
         'movielens': compute_validation_ml,
+        'taobao': compute_validation_ml,
         'reddit': compute_validation_ml,
         'cikm': compute_validation_cikm,
         }
@@ -122,20 +125,17 @@ nid_h = cuda(ScaledEmbedding(1 + len(ml.users) + len(ml.products), n_hidden, pad
 nid_m = cuda(ScaledEmbedding(1 + len(ml.users) + len(ml.products), n_hidden, padding_idx=0))
 nid_b = cuda(ZeroEmbedding(1 + len(ml.users) + len(ml.products), 1, padding_idx=0))
 
-#with open('pmap.pkl', 'rb') as f:
-#    pmap = pickle.load(f)
-#    pmap = [ml.product_ids_invmap[pmap[i]] for i in range(1, len(pmap) + 1)]
-#with open('spotlight_init.pkl', 'rb') as f:
+#with open('spotlight.pkl', 'rb') as f:
 #    spotlight = pickle.load(f)
 #    user_emb = spotlight._net.user_embeddings.weight
 #    item_emb = spotlight._net.item_embeddings.weight
-#    item_emb2 = spotlight._net.item_embeddings2.weight
+#    #item_emb2 = spotlight._net.item_embeddings2.weight
 #    user_bias = spotlight._net.user_biases.weight
 #    item_bias = spotlight._net.item_biases.weight
 #    nid_h.weight.data[1:len(ml.users)+1] = user_emb[ml.user_ids]
 #    nid_h.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1] = item_emb[ml.product_ids]
 #    nid_m.weight.data[1:len(ml.users)+1] = user_emb[ml.user_ids]
-#    nid_m.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1] = item_emb2[ml.product_ids]
+#    nid_m.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1] = item_emb[ml.product_ids]
 #    nid_b.weight.data[1:len(ml.users)+1] = user_bias[ml.user_ids]
 #    nid_b.weight.data[len(ml.users)+1:len(ml.users)+len(ml.products)+1] = item_bias[ml.product_ids]
 
@@ -259,12 +259,14 @@ def runtrain(g_prior_edges, g_train_edges, train, edge_shuffled):
             neg_score = (h_src[:, None] * h_dst_neg.view(src_size, n_negs, -1)).sum(2) + b_src[:, None] + b_dst_neg
             pos_nlogp = -F.logsigmoid(pos_score)
             neg_nlogp = -F.logsigmoid(-neg_score)
-            if args.dataset.startswith('movielens'):
+            if args.dataset.startswith('movielens') and not args.dataset.endswith('imp'):
                 loss = (pos_score - cuda(g.edges[edges].data['rating'])) ** 2
                 loss = loss.mean()
                 acc = loss
             else:
-                loss = (pos_nlogp + neg_nlogp.sum(1)).mean()
+                diff = neg_score.mean(1) - pos_score
+                loss = loss_func[args.loss](diff)
+                #loss = (pos_nlogp + neg_nlogp.sum(1)).mean()
                 acc = ((pos_score > 0).sum() + (neg_score < 0).sum()).float() / (src_size * (1 + n_negs))
             assert loss.item() == loss.item()
 

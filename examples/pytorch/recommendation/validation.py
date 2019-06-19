@@ -31,20 +31,15 @@ def compute_validation_ml(ml, h, b, model, test):
     h = h.cpu()
     b = b.cpu()
     M = h[:n_users] @ h[n_users:].t() + b[:n_users] + b[n_users:].t()
-    p_nids_candidates = ml.p_nids_candidate_valid if not test else ml.p_nids_candidate_test
 
     with torch.no_grad():
         with tqdm.trange(n_users) as tq:
             for u_nid in tq:
-                p_nids = ml.p_nids[u_nid]
-                p_nids_candidate = p_nids_candidates[u_nid]
-
-                score = M[u_nid, p_nids]
-                score_sort_idx = score.sort(descending=True)[1].numpy()[:25]
-
-                rank_map = {v: i for i, v in enumerate(p_nids[score_sort_idx])}
-                rank_candidates = np.array([rank_map[p_nid] for p_nid in p_nids_candidate if p_nid in rank_map])
-                rank = 1 / (rank_candidates + 1)
+                score = M[u_nid].clone()
+                score[ml.p_train[u_nid]] = -10000
+                score[ml.p_test[u_nid] if validation else ml.p_valid[u_nid]] = -10000
+                rank = st.rankdata(-score)[ml.p_valid[u_nid] if validation else ml.p_test[u_nid]]
+                rank = 1 / rank
                 rr.append(rank.mean() if len(rank) > 0 else 0.)
                 tq.set_postfix({'rank': rank.mean()})
 

@@ -81,31 +81,11 @@ class UserProductDataset(object):
         #        torch.ones(self.g.number_of_edges() - len(self.ratings) * 2).byte()
 
     def generate_candidates(self):
-        exclude_mask = (self.ratings['train'] | self.ratings['valid'] | self.ratings['test']).values
-        candidate_mask_train = self.ratings['train'].values
-        candidate_mask_valid = self.ratings['valid'].values
-        candidate_mask_test = self.ratings['test'].values
-        user_ids = self.ratings['user_id'].values
-        product_ids = self.ratings['product_id'].values
-
-        self.p_nids = []
-        self.p_nids_candidate_train = []
-        self.p_nids_candidate_valid = []
-        self.p_nids_candidate_test = []
-        with tqdm.trange(len(self.users)) as tq:
-            for u_nid in tq:
-                uid = self.user_ids[u_nid]
-                uid_mask = (user_ids == uid)
-                pids_exclude = product_ids[uid_mask & exclude_mask]
-                pids_candidate_train = product_ids[uid_mask & candidate_mask_train]
-                pids_candidate_valid = product_ids[uid_mask & candidate_mask_valid]
-                pids_candidate_test = product_ids[uid_mask & candidate_mask_test]
-                pids = np.setdiff1d(self.product_ids, pids_exclude)
-                p_nids = np.array([self.product_ids_invmap[pid] for pid in pids])
-                p_nids_candidate_train = np.array([self.product_ids_invmap[pid] for pid in pids_candidate_valid])
-                p_nids_candidate_valid = np.array([self.product_ids_invmap[pid] for pid in pids_candidate_valid])
-                p_nids_candidate_test = np.array([self.product_ids_invmap[pid] for pid in pids_candidate_test])
-                self.p_nids.append(p_nids)
-                self.p_nids_candidate_train.append(p_nids_candidate_train)
-                self.p_nids_candidate_valid.append(p_nids_candidate_valid)
-                self.p_nids_candidate_test.append(p_nids_candidate_test)
+        self.p_train = []
+        self.p_valid = []
+        self.p_test = []
+        for uid in tqdm.tqdm(self.user_ids):
+            user_ratings = ml.ratings[ml.ratings['user_id'] == uid]
+            self.p_train.append(user_ratings[user_ratings['train']]['product_id'].values)
+            self.p_valid.append(user_ratings[user_ratings['valid']]['product_id'].values)
+            self.p_test.append(user_ratings[user_ratings['test']]['product_id'].values)
