@@ -85,7 +85,10 @@ class UserProductDataset(object):
         self.p_valid = []
         self.p_test = []
         for uid in tqdm.tqdm(self.user_ids):
-            user_ratings = ml.ratings[ml.ratings['user_id'] == uid]
-            self.p_train.append(user_ratings[user_ratings['train']]['product_id'].values)
-            self.p_valid.append(user_ratings[user_ratings['valid']]['product_id'].values)
-            self.p_test.append(user_ratings[user_ratings['test']]['product_id'].values)
+            user_ratings = self.ratings[self.ratings['user_id'] == uid]
+            self.p_train.append(np.array(
+                [self.product_ids_invmap[i] for i in user_ratings[user_ratings['train']]['product_id'].values]))
+            self.p_valid.append(np.array(
+                [self.product_ids_invmap[i] for i in user_ratings[user_ratings['valid']]['product_id'].values]))
+            self.p_test.append(np.array(
+                [self.product_ids_invmap[i] for i in user_ratings[user_ratings['test']]['product_id'].values]))

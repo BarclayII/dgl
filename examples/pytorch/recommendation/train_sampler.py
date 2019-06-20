@@ -159,29 +159,29 @@ for epoch in range(500):
         seed_nodes.append(dst_neg_batches[i])
     seed_nodes = torch.cat(seed_nodes)
 
-    sampler = PPRBipartiteSingleSidedNeighborSampler(
-            g_prior,
-            batch_size * (2 + n_negs),
-            n_layers + 1,
-            5,
-            25,
-            max_visit_counts=3,
-            max_frequent_visited_nodes=5,
-            seed_nodes=seed_nodes,
-            restart_prob=0.5,
-            prefetch=False,
-            add_self_loop=True,
-            shuffle=False,
-            num_workers=20)
-    #sampler = NeighborSampler(
+    #sampler = PPRBipartiteSingleSidedNeighborSampler(
     #        g_prior,
     #        batch_size * (2 + n_negs),
+    #        n_layers + 1,
     #        5,
-    #        n_layers,
+    #        25,
+    #        max_visit_counts=3,
+    #        max_frequent_visited_nodes=5,
     #        seed_nodes=seed_nodes,
-    #        prefetch=True,
+    #        restart_prob=0.5,
+    #        prefetch=False,
     #        add_self_loop=True,
+    #        shuffle=False,
     #        num_workers=20)
+    sampler = NeighborSampler(
+            g_prior,
+            batch_size * (2 + n_negs),
+            5,
+            n_layers,
+            seed_nodes=seed_nodes,
+            prefetch=True,
+            add_self_loop=True,
+            num_workers=20)
     sampler_iter = iter(sampler)
 
     with tqdm.tqdm(sampler) as tq:
