@@ -403,4 +403,16 @@ def laplacian_lambda_max(g):
                                       return_eigenvectors=False)[0].real)
     return rst
 
+def coalesce_metapath(g, metapath):
+    """Transform a heterogeneous graph into either a homogeneous graph or a unidirectional
+    bipartite graph so that metapaths are coalesced into edges.
+
+    If the beginning node type ``s`` and ending node type ``t`` are the same, it will return
+    a homogeneous graph with node type ``s = t``.  Otherwise, a unidirectional bipartite graph
+    with source node type ``s`` and destination node type ``t`` is returned.
+
+    In both cases, two nodes ``u`` and ``v`` will be connected with an edge ``(u, v)`` if
+    there exists one path matching the metapath from ``u`` to ``v``.
+    """
+
 _init_api("dgl.transform")
