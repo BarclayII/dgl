@@ -1,6 +1,7 @@
 import collections
 from ...base import NTYPE, NID, ETYPE, EID
 from ... import backend as F
+from ...convert import to_homo, to_hetero
 
 def create_nodeflow(layer_mappings, block_mappings, nf_src, nf_dst, nf_ntype_ids, nf_etype_ids,
                     nf_ntype_names, nf_etype_names, seed_map, block_aux_data):
@@ -255,11 +256,10 @@ class NeighborSamplerGenerator(IterativeGenerator):
 
 
 class MetapathBasedDefaultGenerator(IterativeGenerator):
+    hetero = True
     def __init__(self, heterograph, num_blocks, metapaths, sampler=None, num_workers=0,
                  coalesce=False):
-        self.heterograph = heterograph
-        self.graph = to_homo(heterograph)
-        super().__init__(self.graph, num_blocks, sampler, num_workers, coalesce)
+        super().__init__(heterograph, num_blocks, sampler, num_workers, coalesce)
         self.metapaths = metapaths
         self.metapath_by_seedtype_id = {}
         for metapath in metapaths:
