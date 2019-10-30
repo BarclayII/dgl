@@ -70,6 +70,23 @@ dgl::runtime::NDArray CopyVectorToNDArray(
   return a;
 }
 
+/* Packed Func conversions */
+
+template<class T1, class T2>
+runtime::PackedFunc ConvertPairToPackedFunc(const std::pair<T1, T2>& pair) {
+  auto body = [pair] (runtime::DGLArgs args, runtime::DGLRetValue* rv) {
+    const int which = args[0];
+    if (which == 0) {
+      *rv = std::move(pair.first);
+    } else if (which == 1) {
+      *rv = std::move(pair.second);
+    } else {
+      LOG(FATAL) << "invalid choice";
+    }
+  };
+  return PackedFunc(body);
+}
+
 runtime::PackedFunc ConvertEdgeArrayToPackedFunc(const EdgeArray& ea);
 
 }  // namespace dgl

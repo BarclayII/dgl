@@ -73,6 +73,16 @@ def test_metapath_random_walk():
                 assert g1.has_edge_between(trace[2 * i], trace[2 * i + 1])
                 assert g2.has_edge_between(trace[2 * i + 1], trace[2 * i + 2])
 
+def test_pinsage_neighbor_sampling():
+    g1 = dgl.bipartite(([0, 1, 2, 3], [0, 1, 2, 3]), 'a', 'ab', 'b')
+    g2 = dgl.bipartite(([0, 0, 1, 1, 2, 2, 3, 3], [1, 3, 2, 0, 3, 1, 0, 2]), 'b', 'ba', 'a')
+    G = dgl.hetero_from_relations([g1, g2])
+    seeds = [0, 1]
+    nb, nb_w = dgl.contrib.sampling.pinsage_neighbor_sampling(G, ['ab', 'ba'], seeds, 3, 5, 4)
+    assert nb.shape == (2, 3)
+    assert nb_w.shape == (2, 3)
+
 if __name__ == '__main__':
     test_random_walk()
     test_metapath_random_walk()
+    test_pinsage_neighbor_sampling()

@@ -10,6 +10,7 @@ __all__ = ['random_walk',
            'random_walk_with_restart',
            'bipartite_single_sided_random_walk_with_restart',
            'metapath_random_walk',
+           'pinsage_neighbor_sampling',
            ]
 
 @register_object('sampler.RandomWalkTraces')
@@ -213,5 +214,23 @@ def metapath_random_walk(hg, etypes, seeds, num_traces):
     seed_array = utils.toindex(seeds).todgltensor()
     traces = _CAPI_DGLMetapathRandomWalk(hg._graph, etype_array, seed_array, num_traces)
     return _split_traces(traces)
+
+def pinsage_neighbor_sampling(hg, etypes, seeds, num_neighbors, num_traces, trace_length):
+    """TODO
+    """
+    if len(etypes) == 0:
+        raise ValueError('empty metapath')
+    if hg.to_canonical_etype(etypes[0])[0] != hg.to_canonical_etype(etypes[-1])[2]:
+        raise ValueError('beginning and ending node type mismatch')
+    if len(seeds) == 0:
+        raise ValueError('no seeds provided')
+
+    etype_array = ndarray.array(np.array([hg.get_etype_id(et) for et in etypes], dtype='int64'))
+    seed_array = utils.toindex(seeds).todgltensor()
+    result = _CAPI_DGLPinSageNeighborSampling(
+            hg._graph, etype_array, seed_array, num_neighbors, num_traces, trace_length)
+    neighbors = F.zerocopy_from_dgl_ndarray(result(0))
+    neighbor_weights = F.zerocopy_from_dgl_ndarray(result(1))
+    return neighbors, neighbor_weights
 
 _init_api('dgl.sampler.randomwalk', __name__)
