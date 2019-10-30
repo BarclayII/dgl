@@ -59,7 +59,6 @@ std::pair<IdArray, IdArray> PinSageNeighborSampling(
           if (succ.size() == 0)
             break;
           curr = succ[RandomEngine::ThreadLocal()->RandInt(succ.size())];
-          break;
         }
 
         ++node_count[curr];
