@@ -56,9 +56,12 @@ std::pair<IdArray, IdArray> PinSageNeighborSampling(
       for (size_t hop_id = 0; hop_id < trace_length; ++hop_id) {
         for (size_t i = 0; i < num_etypes; ++i) {
           const auto &succ = hg->SuccVec(etype_data[i], curr);
-          if (succ.size() == 0)
+          if (succ.size() == 0) {
+            CHECK_EQ(i, 0);
             break;
-          curr = succ[RandomEngine::ThreadLocal()->RandInt(succ.size())];
+          } else {
+            curr = succ[RandomEngine::ThreadLocal()->RandInt(succ.size())];
+          }
         }
 
         ++node_count[curr];
