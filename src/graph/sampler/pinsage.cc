@@ -50,6 +50,8 @@ std::pair<IdArray, IdArray> PinSageNeighborSampling(
     int64_t pos = seed_id * num_neighbors;
 
     node_count.clear();
+    for (int i = 0; i < num_neighbors; ++i)
+      node_count[i] = 0;    // pad to the nunmber of neighbors
     for (int trace_id = 0; trace_id < num_traces; ++trace_id) {
       dgl_id_t curr = seed_data[seed_id];
 
@@ -67,11 +69,6 @@ std::pair<IdArray, IdArray> PinSageNeighborSampling(
         ++node_count[curr];
         ++count;
       }
-    }
-
-    if (count < num_neighbors) {
-      LOG(FATAL) << "number of nodes visited less than number of neighbors required";
-      break;
     }
 
     node_count_sorted.clear();
