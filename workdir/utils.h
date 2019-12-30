@@ -55,14 +55,4 @@ IdArray Unique(IdArray a) {
   });
 }
 
-/*!
- * \brief Compact the node ID space of the frontier graphs in-place and set the
- * induced node mapping.
- *
- * Note that the frontier graphs still share the same node ID space.
- */
-void CompactNodeFlowFrontiers(std::vector<NodeFlowFrontier> &frontiers) {
-  // TODO
-}
-
 };  // namespace dgl

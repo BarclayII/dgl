@@ -14,7 +14,7 @@ std::pair<IdArray, IdArray> _PinSageNeighborSampling(
     int num_neighbors,
     int num_traces,
     double restart_prob
-    int trace_length) {
+    int max_trace_length) {
   const auto metagraph = hg->meta_graph();
   int64_t num_etypes = etypes->shape[0];
   int64_t num_seeds = seeds->shape[0];
@@ -46,7 +46,7 @@ std::pair<IdArray, IdArray> _PinSageNeighborSampling(
     for (int trace_id = 0; trace_id < num_traces; ++trace_id) {
       dgl_id_t curr = seed_data[seed_id];
 
-      for (size_t hop_id = 0; hop_id < trace_length; ++hop_id) {
+      for (size_t hop_id = 0; hop_id < max_trace_length; ++hop_id) {
         bool halt = false;
 
         for (size_t i = 0; i < num_etypes; ++i) {
@@ -93,6 +93,34 @@ std::pair<IdArray, IdArray> _PinSageNeighborSampling(
 
 };  // namespace
 
+/*!
+ * \brief Sample PinSAGE-like neighbors of given seed nodes on a heterogeneous graph.
+ *
+ * PinSAGE-like neighbors of one single seed node are sampled in the following way:
+ *
+ * 1. Perform a random walk, traversing by the given metapath.
+ * 2. Increment the number of visits of the vertex the algorithm just reached.
+ * 3. Continue random walking, or restart from the seed node with the probability of
+ *    \c restart_prob or the length of walk reaches \c max_trace_length.
+ * 4. Repeat 1 to 3 \c num_traces times.
+ * 5. Pick the K-most frequently visited nodes as the neighbors of the seed nodes, where
+ *    K equals to \c num_neighbors.
+ * 6. The weights of neighbors are obtained by normalizing the visit counts.
+ *
+ * \param hg The heterograph
+ * \param etypes The metapath
+ * \param seeds The seed nodes
+ * \param num_neighbors Number of neighbors to take
+ * \param num_traces Number of random walks to sample for a seed node
+ * \param restart_prob Restart probability
+ * \param max_trace_length Maximum number of walks to sample before a restart
+ * \return A NodeFlowFrontier object, whose neighbor weights are stored as
+ * <tt>edata[0]["weights"]</tt>
+ *
+ * \note The metapath should always start and end at the same node type, and the resulting
+ * frontier only has one edge type connecting from and to that node type (i.e. it is
+ * homogeneous).
+ */
 NodeFlowFrontier PinSageSampleNeighbors(
     const HeteroGraphPtr hg,
     const IdArray etypes,
@@ -100,7 +128,7 @@ NodeFlowFrontier PinSageSampleNeighbors(
     int num_neighbors,
     int num_traces,
     double restart_prob,
-    int trace_length) {
+    int max_trace_length) {
   NodeFlowFrontier frontier;
   int64_t num_seeds = seeds->shape[0];
   int64_t num_etypes = etypes->shape[0];
@@ -111,7 +139,7 @@ NodeFlowFrontier PinSageSampleNeighbors(
   CHECK_EQ(node_type, parent_metagraph->FindEdge(etypes[num_etypes - 1]).second);
 
   const auto result = _PinSageNeighborSampling(
-      hg, etypes, seeds, num_neighbors, num_traces, restart_prob, trace_length);
+      hg, etypes, seeds, num_neighbors, num_traces, restart_prob, max_trace_length);
 
   const auto neighbors = result.first;
   const auto neighbor_weights = result.second;
@@ -141,7 +169,7 @@ NodeFlowFrontier PinSageSampleNeighbors(
   int64_t num_edges = src.size();
 
   // Create the graph within the same node ID space of the parent graph.
-  // XXX: we have to force the graph's storage as COO, otherwise CSR's indptr would take
+  // XXX we have to force the graph's storage as COO, otherwise CSR's indptr would take
   // too much memory
   std::vector<HeteroGraphPtr> subrels;
   // The sampled metagraph should have the same node types with the parent graph, while
@@ -153,12 +181,37 @@ NodeFlowFrontier PinSageSampleNeighbors(
   subrels.push_back(UnitGraph::CreateFromCOO(1, num_vertices, num_vertices, src, dst));
   frontier->graph = HeteroGraphPtr(new HeteroGraph(metagraph, subrels));
 
-  frontier->induced_edges = Full(-1, num_edges, 64, DLContext{kDLCPU, 0});
-  frontier->data.Set("weights", VecToFloatArray(weights, 64, DLContext{kDLCPU, 0}));
+  // induced_edges only have one element corresponding to edge type (node_type -> node_type)
+  frontier->induced_edges.push_back(Full(-1, num_edges, 64, DLContext{kDLCPU, 0}));
+
+  Map<std::string, FloatArray> weights;
+  weights.Set("weights", VecToFloatArray(weights, 64, DLContext{kDLCPU, 0}));
+  frontier->edata.push_back(weights);
 
   return frontier;
 }
 
+/*!
+ * \brief Generate minibatch computation dependency for multiple layers of PinSAGE
+ * convolutions, by repeating \c PinSageSampleNeighbors function and removing the
+ * duplicated nodes in a layer.
+ *
+ * \param hg The heterograph
+ * \param etypes The metapath
+ * \param seeds The seed nodes
+ * \param num_neighbors Number of neighbors to take
+ * \param num_traces Number of random walks to sample for a seed node
+ * \param restart_prob Restart probability
+ * \param max_trace_length Maximum number of walks to sample before a restart
+ * \param num_layers Number of layers
+ * \return A NodeFlowFrontier object, whose neighbor weights are stored as
+ * <tt>edata[0]["weights"]</tt>
+ *
+ * \note The metapath should always start and end at the same node type, and the resulting
+ * frontier only has one edge type connecting from and to that node type (i.e. it is
+ * homogeneous).
+ * \note <tt>frontier[0]</tt> is closest to the seed nodes.
+ */
 std::vector<NodeFlowFrontier> PinSageNeighborSampling(
     const HeteroGraphPtr hg,
     const IdArray etypes,
@@ -166,19 +219,19 @@ std::vector<NodeFlowFrontier> PinSageNeighborSampling(
     int num_neighbors,
     int num_traces,
     double restart_prob,
-    int trace_length,
+    int max_trace_length,
     int num_layers) {
   std::vector<NodeFlowFrontier> frontiers;
   IdArray curr_seeds = seeds;
 
   for (int i = 0; i < num_layers; ++i) {
     NodeFlowFrontier frontier = PinSageSampleNeighbors(
-        hg, etypes, curr_seeds, num_neighbors, num_traces, restart_prob, trace_length);
+        hg, etypes, curr_seeds, num_neighbors, num_traces, restart_prob, max_trace_length);
     frontiers.push_back(frontier);
     curr_seeds = Unique(frontier.graph->GetRelationGraph(0)->Edges().src);
   }
 
-  CompactNodeFlowFrontiers(frontiers);
+  CompactNodeFlowFrontiers(&frontiers);
 
   return frontiers;
 }
