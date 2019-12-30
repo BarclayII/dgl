@@ -85,3 +85,28 @@ class BuiltinPinSAGESampler(object):
                 self.max_trace_length,
                 self.num_layers)
         return [NodeFlowFrontier._from_internal(self.HG, f) for f in frontiers]
+
+# TODO
+
+# Sampler iterator that keeps generating pin-pin minibatch graph from a pin-board
+# bipartite graph ``HG``.
+# Note that PinSAGE is equivalent to GraphSAGE except that the neighborhoods
+# are different.  If we use uniform sampling then the model becomes vanilla GraphSAGE
+def sampler_iter(seed_nodes, **kwargs):
+    sampler = BuiltinPinSAGESampler(**kwargs)
+    while True:
+        seed_batches = seed_nodes.split(BATCH_SIZE)
+        for batch in seed_batches:
+            yield sampler(seed_batches)
+
+it = sampler_iter(SEEDS, HG=HG, num_layers=2, num_neighbors=5, num_random_walks=10,
+                  restart_prob=0.5, max_trace_length=5, utype='pin', vtype='board')
+model = PinSAGE(20, 10, 2)
+opt = torch.optim.Adam(model.parameters())
+for frontier in it:
+    output = model(frontiers, X)
+    loss = compute_loss(output)
+    opt.zero_grad()
+    loss.backward()
+    opt.step()
+
