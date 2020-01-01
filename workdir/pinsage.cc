@@ -7,13 +7,54 @@ namespace sampling {
 
 namespace {
 
+std::unordered_map<dgl_id_t, size_t> _PinSageRandomWalkVisitCount(
+    const HeteroGraphPtr hg,
+    dgl_id_t seed_id,
+    int num_neighbors,
+    int num_traces,
+    double restart_prob,
+    int max_trace_length) {
+  std::unordered_map<dgl_id_t, size_t> visit_count;
+
+  visit_count.clear();
+  // pad the node counts to num_neighbors entries so that it can always return
+  // num_neighbors neighbors.
+  for (int i = 0; i < num_neighbors; ++i)
+    visit_count[i] = 0;
+
+  for (int trace_id = 0; trace_id < num_traces; ++trace_id) {
+    dgl_id_t curr = seed_data[seed_id];
+
+    for (size_t hop_id = 0; hop_id < max_trace_length; ++hop_id) {
+      bool halt = false;
+
+      for (size_t i = 0; i < num_etypes; ++i) {
+        IdArray succ = hg->Successors(etype_data[i], curr);
+        if (succ.size() == 0) {
+          halt = true;
+          break;
+        }
+        curr = IndexSelect(succ, RandomEngine::ThreadLocal()->RandInt(succ.size()));
+      }
+
+      if (halt || (RandomEngine::ThreadLocal()->Uniform() < restart_prob))
+        break;
+
+      ++visit_count[curr];
+    }
+  }
+
+  return visit_count;
+}
+
+
 std::pair<IdArray, IdArray> _PinSageNeighborSampling(
     const HeteroGraphPtr hg,
     const IdArray etypes,
     const IdArray seeds,
     int num_neighbors,
     int num_traces,
-    double restart_prob
+    double restart_prob,
     int max_trace_length) {
   const auto metagraph = hg->meta_graph();
   int64_t num_etypes = etypes->shape[0];
@@ -25,48 +66,50 @@ std::pair<IdArray, IdArray> _PinSageNeighborSampling(
       {num_seeds, num_neighbors},
       DLDataType{kDLInt, hg->NumBits(), 1},
       hg->Context());
-  IdArray neighbor_weights = IdArray::Empty(
+  FloatArray neighbor_weights = IdArray::Empty(
       {num_seeds, num_neighbors},
-      DLDataType{kDLFloat, 64, 1},
+      DLDataType{kDLFloat, 32, 1},
       hg->Context());
+#if 0
   dgl_id_t *neighbor_data = static_cast<dgl_id_t *>(neighbors->data);
   size_t *neighbor_weight_data = static_cast<double *>(neighbor_weights->data);
+#endif
 
-  std::unordered_map<dgl_id_t, size_t> node_count;
-  std::vector<std::pair<dgl_id_t, size_t>> node_count_sorted;
+  // Perform random walk with restart and count number of visits for each node.
   for (int64_t seed_id = 0; seed_id < num_seeds; ++seed_id) {
-    int64_t pos = seed_id * num_neighbors;
-
-    node_count.clear();
-    // pad the node counts to num_neighbors entries so that it can always return
-    // num_neighbors neighbors.
-    for (int i = 0; i < num_neighbors; ++i)
-      node_count[i] = 0;
-
-    for (int trace_id = 0; trace_id < num_traces; ++trace_id) {
-      dgl_id_t curr = seed_data[seed_id];
-
-      for (size_t hop_id = 0; hop_id < max_trace_length; ++hop_id) {
-        bool halt = false;
-
-        for (size_t i = 0; i < num_etypes; ++i) {
-          const auto &succ = hg->SuccVec(etype_data[i], curr);
-          if (succ.size() == 0) {
-            halt = true;
-            break;
-          }
-          curr = succ[RandomEngine::ThreadLocal()->RandInt(succ.size())];
-        }
-
-        if (halt || (RandomEngine::ThreadLocal()->Uniform() < restart_prob))
-          break;
-
-        ++node_count[curr];
-      }
+    // Pick the top K neighbors
+    std::unordered_map<dgl_id_t, size_t> visit_count = _PinSageRandomWalkVisitCount(
+        hg, IndexSelect(seeds, seed_id), num_neighbors, num_traces, restart_prob,
+        max_trace_length);
+#if 1
+    std::vector<dgl_id_t> visit_count_keys;
+    std::vector<float> visit_count_values;
+    for (auto &kv : visit_count) {
+      visit_count_keys.push_back(kv.first);
+      visit_count_values.push_back(kv.second);
     }
+    IdArray visit_count_keys_array = VecToIdArray(visit_count_keys);
+    FloatArray visit_count_values_array = VecToFloatArray(visit_count_values);
+    IdArray topk_indices = TopKIndices(visit_count_values_array, num_neighbors);
+    IdArray picked_nodes = IndexSelect(visit_count_keys_array, topk_indices);
+    FloatArray picked_node_weights = IndexSelect(visit_count_values_array, num_neighbors);
+    InplaceDiv(picked_node_weights, ReduceSum(picked_node_weights));
 
-    node_count_sorted.clear();
-    node_count_sorted.insert(node_count_sorted.begin(), node_count.begin(), node_count.end());
+    IdArray curr_neighbors = neighbors.CreateView(
+        {num_neighbors},
+        neighbors->dtype,
+        seed_id * num_neighbors * neighbors->dtype.bits / 8);
+    FloatArray curr_neighbor_weights = neighbor_weights.CreateView(
+        {num_neighbors},
+        neighbor_weights->dtype,
+        seed_id * num_neighbors * neighbor_weights->dtype.bits / 8);
+
+    picked_nodes.CopyTo(curr_neighbors);
+    picked_node_weights.CopyTo(curr_neighbor_weights);
+#else
+    int64_t pos = seed_id * num_neighbors;
+    std::vector<std::pair<dgl_id_t, size_t>> node_count_sorted;
+    node_count_sorted.insert(node_count_sorted.begin(), visit_count.begin(), visit_count.end());
     std::sort(
         node_count_sorted.begin(),
         node_count_sorted.end(),
@@ -85,6 +128,7 @@ std::pair<IdArray, IdArray> _PinSageNeighborSampling(
          i < num_neighbors;
          ++i, ++it)
       neighbor_weight_data[pos + i] = it->second / total_weights;
+#endif
   }
 
   std::pair<IdArray, IdArray> result = std::make_pair(neighbors, neighbor_weights);

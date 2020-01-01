@@ -36,10 +36,72 @@ class PinSAGE(nn.Module):
 
 
 
-class ModularPinSAGESampler(object):
+class PinSAGESampling(object):
+    def __init__(self, HG, etypes, num_neighbors, num_traces, restart_prob, max_trace_length):
+        self.HG = HG
+        self.etypes = etypes
+        self.num_neighbors = num_neighbors
+        self.num_traces = num_traces
+        self.restart_prob = restart_prob
+        self.max_trace_length = max_trace_length
+        
     # TODO: this is supposed to be how users would call C PinSAGE neighbor sampler to
     # build their own
-    pass
+    def __call__(self, frontiers, seed_nodes):
+        from collections import Counter
+
+        if len(frontiers) > 0:
+            seed_nodes = torch.unique(frontiers[-1])
+
+        neighbors = []
+        neighbor_weights = []
+        ntype = self.HG.to_canonical_etype(self.etypes[0])[0]
+        for seed in seed_nodes:
+            counter = Counter()
+            for _ in range(self.num_traces):
+                curr = seed
+                for hop in range(self.max_trace_length):
+                    halt = False
+                    for etype in self.etypes:
+                        succ = self.HG.successors(curr, etype=etype)
+                        if len(succ) == 0:
+                            halt = True
+                            break
+                        curr = succ[torch.randint(len(succ))]
+
+                    if halt or torch.rand() < self.restart_prob:
+                        break
+                    counter.update(curr.item())
+
+            curr_neighbors, curr_neighbor_weights = zip(counter.most_common(self.num_neighbors))
+            curr_neighbors = torch.LongTensor(curr_neighbors)
+            curr_neighbor_weights = torch.FloatTensor(curr_neighbor_weights)
+            curr_neighbor_weights /= curr_neighbor_weights.sum()
+            neighbors.append(curr_neighbors)
+            neighbor_weights.append(curr_neighbor_weights)
+
+        dst = seed_nodes[:, None].expand(seed_nodes.shape[0], self.num_neighbors).flatten()
+        src = neighbors.flatten()
+        weights = neighbor_weights.flatten()
+        new_frontier = dgl.graph((src, dst), card=self.HG.number_of_nodes(ntype))
+        new_frontier.edata['weights'] = weights
+
+        return new_frontier
+
+
+class Sequential(object):
+    def __init__(self, policies):
+        self.policies = policies
+
+    def __call__(self, seeds):
+        frontiers = []
+        for p in self.policies:
+            frontiers.append(p(frontiers, seeds))
+        return frontiers
+
+
+# A pin's neighbor is another pin that shares the same board
+metapath = [('pin', 'in', 'board'), ('board', 'contains', 'pin')]
 
 
 class BuiltinPinSAGESampler(object):
@@ -86,14 +148,16 @@ class BuiltinPinSAGESampler(object):
                 self.num_layers)
         return [NodeFlowFrontier._from_internal(self.HG, f) for f in frontiers]
 
-# TODO
-
 # Sampler iterator that keeps generating pin-pin minibatch graph from a pin-board
 # bipartite graph ``HG``.
 # Note that PinSAGE is equivalent to GraphSAGE except that the neighborhoods
 # are different.  If we use uniform sampling then the model becomes vanilla GraphSAGE
 def sampler_iter(seed_nodes, **kwargs):
     sampler = BuiltinPinSAGESampler(**kwargs)
+    #sampler = Sequential(
+    #        PinSAGESampling(HG, metapath, 10, 10, 0.5, 3),
+    #        PinSAGESampling(HG, metapath, 10, 10, 0.5, 3))
+
     while True:
         seed_batches = seed_nodes.split(BATCH_SIZE)
         for batch in seed_batches:
@@ -109,4 +173,3 @@ for frontier in it:
     opt.zero_grad()
     loss.backward()
     opt.step()
-

@@ -8,88 +8,65 @@ class _NodeFlowFrontier(ObjectBase):
     """
     pass
 
-class NodeFlowFrontier(DGLHeteroGraph):
-    """The graph representing the computation flow of a single layer in minibatch
-    computation.
+def create_frontier(gidx, parent, induced_nodes, induced_edges, ntypes=None,
+                    etypes=None):
+    assert parent._graph.number_of_ntypes() == gidx.number_of_ntypes(), \
+            "Node type space of frontiers must equal to that of parent's."
 
-    Parameters
-    ----------
-    gidx : HeteroGraphIndex
+    if ntypes is None:
+        ntypes = parent.ntypes
+    if etypes is None:
+        # We don't inherit the edge types of parent graph by default.
+        # Instead, we assign names by combining the source and destination types.
+        utype_idx, vtype_idx, etype_idx = gidx.metagraph.edges('eid')
+        utype_idx = utype_idx.tonumpy()
+        vtype_idx = vtype_idx.tonumpy()
+        etype_idx = etype_idx.tonumpy()
+        etypes = [
+                '%s_%s_%d' % (parent.ntypes[utype], parent.ntypes[vtype], etype)
+                for utype, vtype, etype in zip(utype_idx, vtype_idx, etype_idx)]
 
-    parent : DGLHeteroGraph
-        The parent heterograph
-    induced_nodes : list[tensor]
-        The induced node IDs, indexed by node type ID of the frontier
-    induced_edges : list[tensor]
-        The induced edge IDs, indexed by edge type ID of the frontier
+    graph = DGLHeteroGraph(gidx, ntypes, etypes)
+
+    for i in range(len(self.ntypes)):
+        graph.nodes[self.ntypes[i]].data['__INDUCED_NODES__'] = \
+                F.zerocopy_from_dgl_ndarray(induced_nodes[i])
+    for i in range(len(self.canonical_etypes)):
+        graph.edges[self.canonical_etypes[i]].data['__INDUCED_EDGES__'] = \
+                F.zeorcopy_from_dgl_ndarray(induced_edges[i])
+
+    return graph
+
+def create_frontier_from_internal(parent, cobj, ntypes=None, etypes=None):
     """
-    def __init__(self, gidx, parent, induced_nodes, induced_edges, ntypes=None,
-                 etypes=None):
-        assert parent._graph.number_of_ntypes() == gidx.number_of_ntypes(), \
-                "Node type space of frontiers must equal to that of parent's."
+    cobj : _NodeFlowFrontier
+        The C NodeFlowFrontier object
+    """
+    gidx = cobj.graph
+    # induced nodes per type
+    induced_nodes = [F.zerocopy_from_dgl_ndarray(_) for _ in cobj.induced_nodes]
+    # induced edge per type
+    induced_edges = [F.zerocopy_from_dgl_ndarray(_) for _ in cobj.induced_edges]
+    # ndata generated per type
+    ndata = [{k: F.zerocopy_from_dgl_ndarray(v) for k, v in _.items()}
+             for _ in cobj.ndata]
+    # edata generated per type
+    edata = [{k: F.zerocopy_from_dgl_ndarray(v) for k, v in _.items()}
+             for _ in cobj.edata]
+    # graph-level data
+    gdata = {k: F.zerocopy_from_dgl_ndarray(v) for k, v in cobj.gdata.items()}
 
-        if ntypes is None:
-            ntypes = parent.ntypes
-        if etypes is None:
-            # We don't inherit the edge types of parent graph by default.
-            # Instead, we assign names by combining the source and destination types.
-            utype_idx, vtype_idx, etype_idx = gidx.metagraph.edges('eid')
-            utype_idx = utype_idx.tonumpy()
-            vtype_idx = vtype_idx.tonumpy()
-            etype_idx = etype_idx.tonumpy()
-            etypes = [
-                    '%s_%s_%d' % (parent.ntypes[utype], parent.ntypes[vtype], etype)
-                    for utype, vtype, etype in zip(utype_idx, vtype_idx, etype_idx)]
-        super().__init__(gidx, ntypes, etypes)
-        self.induced_nodes = induced_nodes
-        self.induced_edges = induced_edges
-        self.parent = parent
+    frontier = create_frontier(
+            gidx, parent, induced_nodes, induced_edges, ntypes=ntypes, etypes=etypes)
 
-    def induced_nodes_dict(self):
-        return {self.ntypes[i]: self.induced_nodes[i] for i in range(len(self.ntypes))}
+    for i in range(len(ndata)):
+        frontier.nodes[frontier.ntypes[i]].data.update(ndata[i])
+    for i in range(len(edata)):
+        frontier.edges[frontier.canonical_etypes[i]].data.update(edata[i])
+    for k, v in gdata.items():
+        if hasattr(frontier, k):
+            raise KeyError(
+                    '%s is the name of an existing attribute of the frontier object' % k)
+        setattr(frontier, k, v)
 
-    def induced_edges_dict(self):
-        return {self.canonical_etypes[i]: self.induced_edges[i]
-                for i in range(len(self.canonical_etypes))}
-
-    @classmethod
-    def _from_internal(cls, parent, cobj, ntypes=None, etypes=None):
-        """
-        Convert from the C dgl::sampling::NodeFlowFrontier object to Python
-        NodeFlowFrontier object.
-
-        Parameters
-        ----------
-        parent : DGLHeteroGraph
-            The parent graph
-        cobj : _NodeFlowFrontier
-            The C NodeFlowFrontier object
-        """
-        gidx = cobj.graph
-        # induced nodes per type
-        induced_nodes = [F.zerocopy_from_dgl_ndarray(_) for _ in cobj.induced_nodes]
-        # induced edge per type
-        induced_edges = [F.zerocopy_from_dgl_ndarray(_) for _ in cobj.induced_edges]
-        # ndata generated per type
-        ndata = [{k: F.zerocopy_from_dgl_ndarray(v) for k, v in _.items()}
-                 for _ in cobj.ndata]
-        # edata generated per type
-        edata = [{k: F.zerocopy_from_dgl_ndarray(v) for k, v in _.items()}
-                 for _ in cobj.edata]
-        # graph-level data
-        gdata = {k: F.zerocopy_from_dgl_ndarray(v) for k, v in cobj.gdata.items()}
-
-        frontier = cls(gidx, parent, induced_nodes, induced_edges,
-                       ntypes=ntypes, etypes=etypes)
-
-        for i in range(len(ndata)):
-            frontier.nodes[frontier.ntypes[i]].data.update(ndata[i])
-        for i in range(len(edata)):
-            frontier.edges[frontier.canonical_etypes[i]].data.update(edata[i])
-        for k, v in gdata.items():
-            if hasattr(frontier, k):
-                raise KeyError(
-                        '%s is the name of an existing attribute of the frontier object' % k)
-            setattr(frontier, k, v)
-
-        return frontier
+    return frontier
