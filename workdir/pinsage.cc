@@ -7,12 +7,15 @@ namespace sampling {
 
 namespace {
 
+const int MAX_TRIALS = 3;
+
 std::unordered_map<dgl_id_t, size_t> _PinSageRandomWalkVisitCount(
     const HeteroGraphPtr hg,
     dgl_id_t seed_id,
     int num_neighbors,
     int num_traces,
     double restart_prob,
+    std::unordered_set<std::pair<dgl_id_t, dgl_id_t>> exclusions,
     int max_trace_length) {
   std::unordered_map<dgl_id_t, size_t> visit_count;
 
@@ -27,14 +30,26 @@ std::unordered_map<dgl_id_t, size_t> _PinSageRandomWalkVisitCount(
 
     for (size_t hop_id = 0; hop_id < max_trace_length; ++hop_id) {
       bool halt = false;
+      dgl_id_t prev = curr;
+      bool success = false;
+      int trials = 0;
 
-      for (size_t i = 0; i < num_etypes; ++i) {
-        IdArray succ = hg->Successors(etype_data[i], curr);
-        if (succ.size() == 0) {
-          halt = true;
-          break;
+      for (int trials = 0; trials < MAX_TRIALS; ++trials) {
+        curr = prev;
+        for (size_t i = 0; i < num_etypes; ++i) {
+          IdArray succ = hg->Successors(etype_data[i], curr);
+          if (succ.size() == 0) {
+            halt = true;
+            break;
+          }
+          curr = IndexSelect(succ, RandomEngine::ThreadLocal()->RandInt(succ.size()));
         }
-        curr = IndexSelect(succ, RandomEngine::ThreadLocal()->RandInt(succ.size()));
+        if (halt)
+          break;
+
+        success = (exclusions.find(std::make_pair(prev, curr)) != exclusions.end());
+        if (halt || success)
+          break;
       }
 
       if (halt || (RandomEngine::ThreadLocal()->Uniform() < restart_prob))
@@ -55,6 +70,7 @@ std::pair<IdArray, IdArray> _PinSageNeighborSampling(
     int num_neighbors,
     int num_traces,
     double restart_prob,
+    std::unordered_set<std::pair<dgl_id_t, dgl_id_t>> exclusions,
     int max_trace_length) {
   const auto metagraph = hg->meta_graph();
   int64_t num_etypes = etypes->shape[0];
@@ -80,7 +96,7 @@ std::pair<IdArray, IdArray> _PinSageNeighborSampling(
     // Pick the top K neighbors
     std::unordered_map<dgl_id_t, size_t> visit_count = _PinSageRandomWalkVisitCount(
         hg, IndexSelect(seeds, seed_id), num_neighbors, num_traces, restart_prob,
-        max_trace_length);
+        exclusions, max_trace_length);
 #if 1
     std::vector<dgl_id_t> visit_count_keys;
     std::vector<float> visit_count_values;
@@ -172,6 +188,7 @@ NodeFlowFrontier PinSageSampleNeighbors(
     int num_neighbors,
     int num_traces,
     double restart_prob,
+    std::unordered_set<std::pair<dgl_id_t, dgl_id_t>> exclusions,
     int max_trace_length) {
   NodeFlowFrontier frontier;
   int64_t num_seeds = seeds->shape[0];
@@ -183,7 +200,8 @@ NodeFlowFrontier PinSageSampleNeighbors(
   CHECK_EQ(node_type, parent_metagraph->FindEdge(etypes[num_etypes - 1]).second);
 
   const auto result = _PinSageNeighborSampling(
-      hg, etypes, seeds, num_neighbors, num_traces, restart_prob, max_trace_length);
+      hg, etypes, seeds, num_neighbors, num_traces, restart_prob,
+      exclusions, max_trace_length);
 
   const auto neighbors = result.first;
   const auto neighbor_weights = result.second;
@@ -263,6 +281,7 @@ std::vector<NodeFlowFrontier> PinSageNeighborSampling(
     int num_neighbors,
     int num_traces,
     double restart_prob,
+    std::unordered_set<std::pair<dgl_id_t, dgl_id_t>> exclusions,
     int max_trace_length,
     int num_layers) {
   std::vector<NodeFlowFrontier> frontiers;
@@ -270,7 +289,8 @@ std::vector<NodeFlowFrontier> PinSageNeighborSampling(
 
   for (int i = 0; i < num_layers; ++i) {
     NodeFlowFrontier frontier = PinSageSampleNeighbors(
-        hg, etypes, curr_seeds, num_neighbors, num_traces, restart_prob, max_trace_length);
+        hg, etypes, curr_seeds, num_neighbors, num_traces, restart_prob,
+        exclusions, max_trace_length);
     frontiers.push_back(frontier);
     curr_seeds = Unique(frontier.graph->GetRelationGraph(0)->Edges().src);
   }

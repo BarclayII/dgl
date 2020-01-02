@@ -47,7 +47,7 @@ class PinSAGESampling(object):
         
     # TODO: this is supposed to be how users would call C PinSAGE neighbor sampler to
     # build their own
-    def __call__(self, frontiers, seed_nodes):
+    def __call__(self, frontiers, seed_nodes, exclusions):
         from collections import Counter
 
         if len(frontiers) > 0:
@@ -60,18 +60,26 @@ class PinSAGESampling(object):
             counter = Counter()
             for _ in range(self.num_traces):
                 curr = seed
-                for hop in range(self.max_trace_length):
-                    halt = False
-                    for etype in self.etypes:
-                        succ = self.HG.successors(curr, etype=etype)
-                        if len(succ) == 0:
-                            halt = True
-                            break
-                        curr = succ[torch.randint(len(succ))]
+                prev = curr
 
-                    if halt or torch.rand() < self.restart_prob:
+                for _ in range(MAX_TRIALS):
+                    curr = prev
+                    for hop in range(self.max_trace_length):
+                        halt = False
+                        for etype in self.etypes:
+                            succ = self.HG.successors(curr, etype=etype)
+                            if len(succ) == 0:
+                                halt = True
+                                break
+                            curr = succ[torch.randint(len(succ))]
+                        if halt:
+                            break
+                    if halt or ((prev, curr) not in exclusions):
                         break
-                    counter.update(curr.item())
+
+                if halt or torch.rand() < self.restart_prob:
+                    break
+                counter.update(curr.item())
 
             curr_neighbors, curr_neighbor_weights = zip(counter.most_common(self.num_neighbors))
             curr_neighbors = torch.LongTensor(curr_neighbors)

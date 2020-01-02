@@ -54,6 +54,10 @@ struct NodeFlowFrontier : public runtime::Object {
 typedef std::shared_ptr<NodeFlowFrontier> NodeFlowFrontierPtr;
 DGL_DEFINE_OBJECT_REF(NodeFlowFrontierRef, NodeFlowFrontier);
 
+using NeighborhoodSampler = std::function<
+    //               frontiers               seed_nodes
+    NodeFlowFrontier(List<NodeFlowFrontier>, IdArray)>;
+
 };  // namespace sampling
 
 };  // namespace dgl
