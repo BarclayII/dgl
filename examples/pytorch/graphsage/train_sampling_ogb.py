@@ -15,7 +15,6 @@ from functools import wraps
 from dgl.data import RedditDataset
 import tqdm
 import traceback
-
 from ogb.nodeproppred import DglNodePropPredDataset
 
 #### Neighbor sampler
@@ -30,7 +29,10 @@ class NeighborSampler(object):
         blocks = []
         for fanout in self.fanouts:
             # For each seed node, sample ``fanout`` neighbors.
-            frontier = dgl.sampling.sample_neighbors(self.g, seeds, fanout, replace=True)
+            if fanout == 0:
+                frontier = dgl.in_subgraph(self.g, seeds)
+            else:
+                frontier = dgl.sampling.sample_neighbors(self.g, seeds, fanout, replace=True)
             # Then we compact the frontier into a bipartite graph for message passing.
             block = dgl.to_block(frontier, seeds)
             # Obtain the seed nodes for next layer.
@@ -80,7 +82,6 @@ class SAGE(nn.Module):
         Inference with the GraphSAGE model on full neighbors (i.e. without neighbor sampling).
         g : the entire graph.
         x : the input of entire node set.
-
         The inference code is written in a fashion that it could handle any number of nodes and
         layers.
         """
@@ -116,7 +117,6 @@ def prepare_mp(g):
     Explicitly materialize the CSR, CSC and COO representation of the given graph
     so that they could be shared via copy-on-write to sampler workers and GPU
     trainers.
-
     This is a workaround before full shared memory support on heterogeneous graphs.
     """
     g.in_degree(0)
@@ -219,7 +219,7 @@ def run(args, device, data):
             avg += toc - tic
         if epoch % args.eval_every == 0 and epoch != 0:
             eval_acc, test_acc = evaluate(model, g, labels, val_nid, test_nid, args.batch_size, device)
-            print('Eval Acc {:.4f} Test Acc {:.4f}'.format(eval_acc, test_acc))
+            print('Eval Acc {:.4f}'.format(eval_acc))
             if eval_acc > best_eval_acc:
                 best_eval_acc = eval_acc
                 best_test_acc = test_acc
@@ -231,16 +231,16 @@ if __name__ == '__main__':
     argparser = argparse.ArgumentParser("multi-gpu training")
     argparser.add_argument('--gpu', type=int, default=0,
         help="GPU device ID. Use -1 for CPU training")
-    argparser.add_argument('--num-epochs', type=int, default=200)
-    argparser.add_argument('--num-hidden', type=int, default=256)
-    argparser.add_argument('--num-layers', type=int, default=3)
-    argparser.add_argument('--fan-out', type=str, default='5,5,10')
-    argparser.add_argument('--batch-size', type=int, default=256)
+    argparser.add_argument('--num-epochs', type=int, default=20)
+    argparser.add_argument('--num-hidden', type=int, default=16)
+    argparser.add_argument('--num-layers', type=int, default=2)
+    argparser.add_argument('--fan-out', type=str, default='10,25')
+    argparser.add_argument('--batch-size', type=int, default=1000)
     argparser.add_argument('--log-every', type=int, default=20)
-    argparser.add_argument('--eval-every', type=int, default=1)
-    argparser.add_argument('--lr', type=float, default=0.01)
+    argparser.add_argument('--eval-every', type=int, default=5)
+    argparser.add_argument('--lr', type=float, default=0.003)
     argparser.add_argument('--dropout', type=float, default=0)
-    argparser.add_argument('--num-workers', type=int, default=8,
+    argparser.add_argument('--num-workers', type=int, default=0,
         help="Number of sampling processes. Use 0 for no extra process.")
     args = argparser.parse_args()
     
@@ -262,4 +262,4 @@ if __name__ == '__main__':
     # Pack data
     data = train_idx, val_idx, test_idx, in_feats, labels, n_classes, graph
 
-    run(args, int(args.gpu), data)
+    run(args, device, data)

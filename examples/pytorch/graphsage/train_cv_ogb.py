@@ -37,6 +37,7 @@ class SAGEConvWithCV(nn.Module):
                 HBar_src, agg_HBar_dst = HBar
                 block.dstdata['agg_hbar'] = agg_HBar_dst
                 block.srcdata['hdelta'] = H_src - HBar_src
+                block.dstdata['hdelta_new'] = th.zeros(block.number_of_dst_nodes(), *H_src.shape[1:]).to(H_src)
                 block.update_all(fn.copy_u('hdelta', 'm'), fn.mean('m', 'hdelta_new'))
                 h_neigh = block.dstdata['agg_hbar'] + block.dstdata['hdelta_new']
                 h = self.W(th.cat([H_dst, h_neigh], 1))
@@ -47,6 +48,7 @@ class SAGEConvWithCV(nn.Module):
             with block.local_scope():
                 H_src, H_dst = H
                 block.srcdata['h'] = H_src
+                block.dstdata['h'] = th.zeros(block.number_of_dst_nodes(), *H_src.shape[1:]).to(H_src)
                 block.update_all(fn.copy_u('h', 'm'), fn.mean('m', 'h_new'))
                 h_neigh = block.dstdata['h_new']
                 h = self.W(th.cat([H_dst, h_neigh], 1))
@@ -197,6 +199,8 @@ def load_subtensor(g, labels, blocks, hist_blocks, dev_id, aggregation_on_device
         hist_block.srcdata['hist'] = g.ndata[hist_col][hist_block.srcdata[dgl.NID]]
         if aggregation_on_device:
             hist_block.srcdata['hist'] = hist_block.srcdata['hist'].to(dev_id)
+        hist = hist_block.srcdata['hist']
+        hist_block.dstdata['agg_hist'] = th.zeros(hist_block.number_of_dst_nodes(), *hist.shape[1:]).to(hist)
         hist_block.update_all(fn.copy_u('hist', 'm'), fn.mean('m', 'agg_hist'))
         block.dstdata['agg_hist'] = hist_block.dstdata['agg_hist']
         if not aggregation_on_device:
@@ -320,6 +324,11 @@ if __name__ == '__main__':
     splitted_idx = data.get_idx_split()
     train_idx, val_idx, test_idx = splitted_idx['train'], splitted_idx['valid'], splitted_idx['test']
     graph, labels = data[0]
+    ### BEGIN
+    deg = graph.in_degrees()
+    zero_deg = (deg == 0).nonzero()[:, 0]
+    train_idx = th.LongTensor(np.intersect1d(zero_deg.numpy(), train_idx.numpy()))
+    ### END
     labels = labels[:, 0]
     graph = dgl.as_heterograph(graph)
     in_feats = graph.ndata['feat'].shape[1]
