@@ -324,11 +324,6 @@ if __name__ == '__main__':
     splitted_idx = data.get_idx_split()
     train_idx, val_idx, test_idx = splitted_idx['train'], splitted_idx['valid'], splitted_idx['test']
     graph, labels = data[0]
-    ### BEGIN
-    deg = graph.in_degrees()
-    zero_deg = (deg == 0).nonzero()[:, 0]
-    train_idx = th.LongTensor(np.intersect1d(zero_deg.numpy(), train_idx.numpy()))
-    ### END
     labels = labels[:, 0]
     graph = dgl.as_heterograph(graph)
     in_feats = graph.ndata['feat'].shape[1]
