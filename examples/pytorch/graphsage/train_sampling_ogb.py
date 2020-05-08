@@ -144,7 +144,7 @@ def evaluate(model, g, labels, val_nid, test_nid, batch_size, device):
         inputs = g.ndata['feat']
         pred = model.inference(g, inputs, batch_size, device)
     model.train()
-    return compute_acc(pred[val_nid], labels[val_nid]), compute_acc(pred[test_nid], labels[test_nid])
+    return compute_acc(pred[val_nid], labels[val_nid]), compute_acc(pred[test_nid], labels[test_nid]), pred
 
 def load_subtensor(g, labels, seeds, input_nodes, device):
     """
@@ -218,7 +218,9 @@ def run(args, device, data):
         if epoch >= 5:
             avg += toc - tic
         if epoch % args.eval_every == 0 and epoch != 0:
-            eval_acc, test_acc = evaluate(model, g, labels, val_nid, test_nid, args.batch_size, device)
+            eval_acc, test_acc, pred = evaluate(model, g, labels, val_nid, test_nid, args.batch_size, device)
+            if args.save_pred:
+                np.savetxt(args.save_pred + '%02d' % epoch, pred.argmax(1).cpu().numpy(), '%d')
             print('Eval Acc {:.4f}'.format(eval_acc))
             if eval_acc > best_eval_acc:
                 best_eval_acc = eval_acc
@@ -242,6 +244,7 @@ if __name__ == '__main__':
     argparser.add_argument('--dropout', type=float, default=0)
     argparser.add_argument('--num-workers', type=int, default=0,
         help="Number of sampling processes. Use 0 for no extra process.")
+    argparser.add_argument('--save-pred', type=str, default='')
     args = argparser.parse_args()
     
     if args.gpu >= 0:
@@ -255,7 +258,9 @@ if __name__ == '__main__':
     train_idx, val_idx, test_idx = splitted_idx['train'], splitted_idx['valid'], splitted_idx['test']
     graph, labels = data[0]
     labels = labels[:, 0]
+
     graph = dgl.as_heterograph(graph)
+
     in_feats = graph.ndata['feat'].shape[1]
     n_classes = (labels.max() + 1).item()
     prepare_mp(graph)

@@ -125,6 +125,8 @@ class SAGEConv(nn.Module):
 
             if self._aggre_type == 'mean':
                 graph.srcdata['h'] = feat_src
+                graph.dstdata['neigh'] = feat_src.new_zeros(
+                    graph.number_of_dst_nodes(), *feat_src.shape[1:])
                 graph.update_all(fn.copy_src('h', 'm'), fn.mean('m', 'neigh'))
                 h_neigh = graph.dstdata['neigh']
             elif self._aggre_type == 'gcn':
