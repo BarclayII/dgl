@@ -248,7 +248,7 @@ def run(args, dev_id, data):
     model = model.to(dev_id)
     loss_fcn = nn.CrossEntropyLoss()
     loss_fcn = loss_fcn.to(dev_id)
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
     # Compute history tensor and their aggregation before training on CPU
     model.eval()
@@ -320,6 +320,7 @@ if __name__ == '__main__':
     argparser.add_argument('--lr', type=float, default=0.003)
     argparser.add_argument('--num-workers-per-gpu', type=int, default=0)
     argparser.add_argument('--save-pred', type=str, default='')
+    argparser.add_argument('--wd', type=float, default=0)
     args = argparser.parse_args()
 
     # load reddit data
