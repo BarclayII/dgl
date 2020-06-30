@@ -18,7 +18,17 @@ bool CSRIsSorted(CSRMatrix csr) {
   const IdType* indptr = csr.indptr.Ptr<IdType>();
   const IdType* indices = csr.indices.Ptr<IdType>();
   bool ret = true;
-#pragma omp parallel for shared(ret)
+  // (BarclayII) Rarely it will return true even if the arrays are not sorted on Windows
+  // if critical section is not enabled, causing the unit test to fail.  I tested it on
+  // Linux multiple times and I wasn't able to observe the same failure.  This is very
+  // strange, as one of the MSVC tutorials about migrating OpenMP cancellation to its
+  // PPL library used pretty much the same code as ours.  I Googled and didn't find
+  // any literature on this behavior either.
+  // Here I'm assuming that this is specific to VS2017-.  If someone find CSRIsSorted
+  // still failing, please report a bug.
+#ifdef WIN32
+#pragma omp parallel for
+#endif
   for (int64_t row = 0; row < csr.num_rows; ++row) {
     if (!ret)
       continue;

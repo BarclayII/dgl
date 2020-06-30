@@ -393,6 +393,8 @@ TEST(SpmatTest, TestCSRHasDuplicate) {
 
 template <typename IDX>
 void _TestCSRSort(DLContext ctx) {
+  // (BarclayII) Please see my comment in src/array/cpu/csr_sort.cc::CSRIsSorted.  If you
+  // find this test failing, please report a bug.
   auto csr = CSR1<IDX>(ctx);
   ASSERT_FALSE(aten::CSRIsSorted(csr));
   auto csr1 = aten::CSRSort(csr);
