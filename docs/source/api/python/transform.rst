@@ -30,5 +30,3 @@ Common algorithms on graphs.
     remove_edges
     as_immutable_graph
     as_heterograph
-    add_reverse
-    add_reverse_types
