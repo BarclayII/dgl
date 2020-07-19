@@ -229,18 +229,6 @@ def run(proc_id, n_gpus, args, devices, dataset):
     train_labels = dataset.train_labels
     train_truths = dataset.train_truths
     num_edges = train_truths.shape[0]
-    #sampler = GCMCSampler(dataset,
-    #                      'train')
-
-    #seeds = th.arange(num_edges)
-    #dataloader = DataLoader(
-    #    dataset=seeds,
-    #    batch_size=args.minibatch_size,
-    #    collate_fn=sampler.sample_blocks,
-    #    shuffle=True,
-    #    pin_memory=True,
-    #    drop_last=False,
-    #    num_workers=args.num_workers_per_gpu)
 
     reverse_types = {str(k): 'rev-' + str(k) for k in dataset.possible_rating_values}
     reverse_types.update({v: k for k, v in reverse_types.items()})
@@ -258,27 +246,6 @@ def run(proc_id, n_gpus, args, devices, dataset):
         drop_last=False)
 
     if proc_id == 0:
-        #valid_sampler = GCMCSampler(dataset,
-        #                            'valid')
-        #valid_seeds = th.arange(dataset.valid_truths.shape[0])
-        #valid_dataloader = DataLoader(dataset=valid_seeds,
-        #                              batch_size=args.minibatch_size,
-        #                              collate_fn=valid_sampler.sample_blocks,
-        #                              shuffle=False,
-        #                              pin_memory=True,
-        #                              drop_last=False,
-        #                              num_workers=args.num_workers_per_gpu)
-
-        #test_sampler = GCMCSampler(dataset,
-        #                           'test')
-        #test_seeds = th.arange(dataset.test_truths.shape[0])
-        #test_dataloader = DataLoader(dataset=test_seeds,
-        #                             batch_size=args.minibatch_size,
-        #                             collate_fn=test_sampler.sample_blocks,
-        #                             shuffle=False,
-        #                             pin_memory=True,
-        #                             drop_last=False,
-        #                             num_workers=args.num_workers_per_gpu)
         valid_dataloader = dgl.dataloading.EdgeDataLoader(
             dataset.valid_dec_graph,
             th.arange(dataset.valid_dec_graph.number_of_edges()),
