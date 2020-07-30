@@ -976,6 +976,62 @@ class FrameRef(MutableMapping):
         """
         return self._index.get_items(query)
 
+class FrameRef2(MutableMapping):
+    """Reference object to a frame on a subset of rows.
+
+    Parameters
+    ----------
+    frame : Frame or FrameRef2
+        The parent frame or frame reference object.
+    index : utils.Index, optional
+        The rows that are referenced in the underlying frame. If not given,
+        the whole frame is referenced. The index does not have to be distinct.
+    """
+    def __init__(self, parent, index=None):
+        self._parent = parent
+        assert index is None or isinstance(index, utils.Index)
+        if index is None:
+            self._index = utils.toindex(slice(0, self._parent.num_rows))
+        else:
+            self._index = index
+        self._frame = Frame(num_rows=len(self._index))
+
+    @property
+    def schemes(self):
+        return self._parent.schemes
+
+    @property
+    def num_columns(self):
+        return self._parent.num_columns
+
+    @property
+    def num_rows(self):
+        return len(self._index)
+
+    def set_initializer(self, initializer, column=None):
+        self._frame.set_initializer(initializer, column=column)
+
+    def set_remote_init_builder(self, builder):
+        self._frame.set_remote_init_builder(builder)
+
+    def get_initializer(self, column=None):
+        self._frame.get_initializer(column)
+
+    def __contains__(self, name):
+        return name in self._parent
+
+    def __iter__(self):
+        return iter(self._frame)
+
+    def __len__(self):
+        return self.num_columns
+
+    def keys(self):
+        return self._parent.keys()
+
+    def values(self):
+        return self._frame.values()
+
 def frame_like(other, num_rows=None):
     """Create an empty frame that has the same initializer as the given one.
 
