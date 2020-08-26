@@ -63,17 +63,22 @@ def test_line_graph2(idtype):
         ('user', 'follows', 'user'): ([0, 1, 1, 2, 2],[2, 0, 2, 0, 1])
     }, idtype=idtype).formats('csc')
     lg = dgl.line_graph(g)
-    assert lg.number_of_nodes() == 5
-    assert lg.number_of_edges() == 8
-    row, col, eid = lg.edges('all')
-    row = F.asnumpy(row)
-    col = F.asnumpy(col)
-    eid = F.asnumpy(eid).astype(int)
-    order = np.argsort(eid)
-    assert np.array_equal(row[order],
-                          np.array([0, 0, 1, 2, 2, 3, 4, 4]))
-    assert np.array_equal(col[order],
-                          np.array([3, 4, 0, 3, 4, 0, 1, 2]))
+    bg = dgl.batch([g, g])
+    blg = dgl.line_graph(bg)
+    lg1, lg2 = dgl.unbatch(blg)
+
+    for _lg in [lg, lg1, lg2]:
+        assert _lg.number_of_nodes() == 5
+        assert _lg.number_of_edges() == 8
+        row, col, eid = _lg.edges('all')
+        row = F.asnumpy(row)
+        col = F.asnumpy(col)
+        eid = F.asnumpy(eid).astype(int)
+        order = np.argsort(eid)
+        assert np.array_equal(row[order],
+                              np.array([0, 0, 1, 2, 2, 3, 4, 4]))
+        assert np.array_equal(col[order],
+                              np.array([3, 4, 0, 3, 4, 0, 1, 2]))
 
 def test_no_backtracking():
     N = 5
@@ -161,32 +166,37 @@ def test_reverse(idtype):
     g.edges['follows'].data['hh'] = F.tensor([1, 2, 3, 2, 0, 0, 1])
     g_r = dgl.reverse(g)
 
-    for etype_g, etype_gr in zip(g.canonical_etypes, g_r.canonical_etypes):
-        assert etype_g[0] == etype_gr[2]
-        assert etype_g[1] == etype_gr[1]
-        assert etype_g[2] == etype_gr[0]
-        assert g.number_of_edges(etype_g) == g_r.number_of_edges(etype_gr)
-    for ntype in g.ntypes:
-        assert g.number_of_nodes(ntype) == g_r.number_of_nodes(ntype)
-    assert F.array_equal(g.nodes['user'].data['h'], g_r.nodes['user'].data['h'])
-    assert F.array_equal(g.nodes['user'].data['hh'], g_r.nodes['user'].data['hh'])
-    assert F.array_equal(g.nodes['game'].data['h'], g_r.nodes['game'].data['h'])
-    assert len(g_r.edges['follows'].data) == 0
-    u_g, v_g, eids_g = g.all_edges(form='all', etype=('user', 'follows', 'user'))
-    u_rg, v_rg, eids_rg = g_r.all_edges(form='all', etype=('user', 'follows', 'user'))
-    assert F.array_equal(u_g, v_rg)
-    assert F.array_equal(v_g, u_rg)
-    assert F.array_equal(eids_g, eids_rg)
-    u_g, v_g, eids_g = g.all_edges(form='all', etype=('user', 'plays', 'game'))
-    u_rg, v_rg, eids_rg = g_r.all_edges(form='all', etype=('game', 'plays', 'user'))
-    assert F.array_equal(u_g, v_rg)
-    assert F.array_equal(v_g, u_rg)
-    assert F.array_equal(eids_g, eids_rg)
-    u_g, v_g, eids_g = g.all_edges(form='all', etype=('developer', 'develops', 'game'))
-    u_rg, v_rg, eids_rg = g_r.all_edges(form='all', etype=('game', 'develops', 'developer'))
-    assert F.array_equal(u_g, v_rg)
-    assert F.array_equal(v_g, u_rg)
-    assert F.array_equal(eids_g, eids_rg)
+    bg = dgl.batch([g, g])
+    bg_r = dgl.reverse(bg)
+    g_r1, g_r2 = dgl.unbatch(bg_r)
+
+    for _g_r in [g_r, g_r1, g_r2]:
+        for etype_g, etype_gr in zip(g.canonical_etypes, _g_r.canonical_etypes):
+            assert etype_g[0] == etype_gr[2]
+            assert etype_g[1] == etype_gr[1]
+            assert etype_g[2] == etype_gr[0]
+            assert g.number_of_edges(etype_g) == _g_r.number_of_edges(etype_gr)
+        for ntype in g.ntypes:
+            assert g.number_of_nodes(ntype) == _g_r.number_of_nodes(ntype)
+        assert F.array_equal(g.nodes['user'].data['h'], _g_r.nodes['user'].data['h'])
+        assert F.array_equal(g.nodes['user'].data['hh'], _g_r.nodes['user'].data['hh'])
+        assert F.array_equal(g.nodes['game'].data['h'], _g_r.nodes['game'].data['h'])
+        assert len(_g_r.edges['follows'].data) == 0
+        u_g, v_g, eids_g = g.all_edges(form='all', etype=('user', 'follows', 'user'))
+        u_rg, v_rg, eids_rg = _g_r.all_edges(form='all', etype=('user', 'follows', 'user'))
+        assert F.array_equal(u_g, v_rg)
+        assert F.array_equal(v_g, u_rg)
+        assert F.array_equal(eids_g, eids_rg)
+        u_g, v_g, eids_g = g.all_edges(form='all', etype=('user', 'plays', 'game'))
+        u_rg, v_rg, eids_rg = _g_r.all_edges(form='all', etype=('game', 'plays', 'user'))
+        assert F.array_equal(u_g, v_rg)
+        assert F.array_equal(v_g, u_rg)
+        assert F.array_equal(eids_g, eids_rg)
+        u_g, v_g, eids_g = g.all_edges(form='all', etype=('developer', 'develops', 'game'))
+        u_rg, v_rg, eids_rg = _g_r.all_edges(form='all', etype=('game', 'develops', 'developer'))
+        assert F.array_equal(u_g, v_rg)
+        assert F.array_equal(v_g, u_rg)
+        assert F.array_equal(eids_g, eids_rg)
 
     # withour share ndata
     g_r = dgl.reverse(g, copy_ndata=False)
@@ -264,18 +274,22 @@ def test_to_bidirected():
     elist1 = set(elist1)
     elist2.append((1, 0))
     elist2 = set(elist2)
-    big = dgl.to_bidirected(g)
-    assert big.number_of_edges('wins') == 7
-    assert big.number_of_edges('follows') == 3
-    src, dst = big.edges(etype='wins')
-    eset = set(zip(list(F.asnumpy(src)), list(F.asnumpy(dst))))
-    assert eset == set(elist1)
-    src, dst = big.edges(etype='follows')
-    eset = set(zip(list(F.asnumpy(src)), list(F.asnumpy(dst))))
-    assert eset == set(elist2)
+    bi_g = dgl.to_bidirected(g, copy_ndata=True)
 
-    big = dgl.to_bidirected(g, copy_ndata=True)
-    assert F.array_equal(g.nodes['user'].data['h'], big.nodes['user'].data['h'])
+    bg = dgl.batch([g, g])
+    b_bi_g = dgl.to_bidirected(bg, copy_ndata=True)
+    bi_g1, bi_g2 = dgl.unbatch(b_bi_g)
+
+    for _bi_g in [bi_g, bi_g1, bi_g2]:
+        assert _bi_g.number_of_edges('wins') == 7
+        assert _bi_g.number_of_edges('follows') == 3
+        src, dst = _bi_g.edges(etype='wins')
+        eset = set(zip(list(F.asnumpy(src)), list(F.asnumpy(dst))))
+        assert eset == set(elist1)
+        src, dst = _bi_g.edges(etype='follows')
+        eset = set(zip(list(F.asnumpy(src)), list(F.asnumpy(dst))))
+        assert eset == set(elist2)
+        assert F.array_equal(g.nodes['user'].data['h'], _bi_g.nodes['user'].data['h'])
 
 def test_add_reverse_edges():
     # homogeneous graph
