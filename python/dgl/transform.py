@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable, Mapping
 from collections import defaultdict
+from functools import wraps
 import numpy as np
 from scipy import sparse
 
@@ -47,6 +48,16 @@ __all__ = [
     'metis_partition',
     'as_heterograph']
 
+
+def allow_batched_transform(func):
+    """Decorator that allows transforming a batched graph."""
+    @wraps(func)
+    def wrapper(g, *args, **kwargs):
+        if g.batch_size > 1:
+            return batch.batch([func(_g, *args, **kwargs) for _g in batch.unbatch(g)])
+        else:
+            return func(g, *args, **kwargs)
+    return wrapper
 
 def pairwise_squared_distance(x):
     """
@@ -224,6 +235,7 @@ def segmented_knn_graph(x, k, segs):
 
     return convert.from_scipy(adj)
 
+@allow_batched_transform
 def to_bidirected(g, copy_ndata=False, readonly=None):
     r"""Convert the graph to a bi-directional simple graph and return.
 
@@ -257,6 +269,9 @@ def to_bidirected(g, copy_ndata=False, readonly=None):
     If :attr:`copy_ndata` is True, the resulting graph will share the node feature
     tensors with the input graph. Hence, users should try to avoid in-place operations
     which will be visible to both graphs.
+
+    If the graph is a batched graph, DGL will apply this function to every element of
+    the batch and return a new batched graph with the results.
 
     Examples
     --------
@@ -304,6 +319,7 @@ def to_bidirected(g, copy_ndata=False, readonly=None):
     g = to_simple(g, return_counts=None, copy_ndata=copy_ndata, copy_edata=False)
     return g
 
+@allow_batched_transform
 def add_reverse_edges(g, readonly=None, copy_ndata=True,
                       copy_edata=False, ignore_bipartite=False):
     r"""Add an reversed edge for each edge in the input graph and return a new graph.
@@ -353,6 +369,9 @@ def add_reverse_edges(g, readonly=None, copy_ndata=True,
     tensors with the input graph. Hence, users should try to avoid in-place operations
     which will be visible to both graphs. On the contrary, the two graphs do not share
     the same edge feature storage.
+
+    If the graph is a batched graph, DGL will apply this function to every element of
+    the batch and return a new batched graph with the results.
 
     Examples
     --------
@@ -447,6 +466,7 @@ def add_reverse_edges(g, readonly=None, copy_ndata=True,
 
     return new_g
 
+@allow_batched_transform
 def line_graph(g, backtracking=True, shared=False):
     """Return the line graph of this graph.
 
@@ -480,6 +500,9 @@ def line_graph(g, backtracking=True, shared=False):
       avoid in-place operations which will be visible to both graphs.
 
     * The function supports input graph on GPU but copies it to CPU during computation.
+
+    If the graph is a batched graph, DGL will apply this function to every element of
+    the batch and return a new batched graph with the results.
 
     Examples
     --------
@@ -637,6 +660,7 @@ def khop_graph(g, k, copy_ndata=True):
 
     return new_g
 
+@allow_batched_transform
 def reverse(g, copy_ndata=True, copy_edata=False, *, share_ndata=None, share_edata=None):
     r"""Return a new graph with every edges being the reverse ones in the input graph.
 
@@ -668,6 +692,9 @@ def reverse(g, copy_ndata=True, copy_edata=False, *, share_ndata=None, share_eda
     the resulting graph will share the node or edge feature
     tensors with the input graph. Hence, users should try to avoid in-place operations
     which will be visible to both graphs.
+
+    If the graph is a batched graph, DGL will apply this function to every element of
+    the batch and return a new batched graph with the results.
 
     Examples
     --------
@@ -1250,6 +1277,7 @@ def remove_nodes(g, nids, ntype=None):
     g.remove_nodes(nids, ntype=ntype)
     return g
 
+@allow_batched_transform
 def add_self_loop(g, etype=None):
     r"""Add self-loops for each node in the graph and return a new graph.
 
@@ -1279,6 +1307,9 @@ def add_self_loop(g, etype=None):
       If one wishes to have exactly one self-loop for every node,
       call :func:`remove_self_loop` before invoking :func:`add_self_loop`.
     * Features of the new edges (self-loop edges) will be filled with zeros.
+
+    If the graph is a batched graph, DGL will apply this function to every element of
+    the batch and return a new batched graph with the results.
 
     Examples
     --------
@@ -1328,6 +1359,7 @@ def add_self_loop(g, etype=None):
 
 DGLHeteroGraph.add_self_loop = utils.alias_func(add_self_loop)
 
+@allow_batched_transform
 def remove_self_loop(g, etype=None):
     r""" Remove self-loops for each node in the graph and return a new graph.
 
@@ -1346,8 +1378,12 @@ def remove_self_loop(g, etype=None):
 
     Notes
     -----
-    If a node has multiple self-loops, remove them all. Do nothing for nodes without
-    self-loops.
+    If a node has multiple self-loops, DGL removes all of them.
+
+    DGL does nothing for nodes without self-loops.
+
+    If the graph is a batched graph, DGL will apply this function to every element of
+    the batch and return a new batched graph with the results.
 
     Examples
     ---------
@@ -1737,6 +1773,7 @@ def to_block(g, dst_nodes=None, include_dst_in_src=True):
 
     return new_graph
 
+@allow_batched_transform
 def to_simple(g,
               return_counts='count',
               writeback_mapping=False,
