@@ -126,10 +126,9 @@ class TLayerNorm(torch.autograd.Function):
         grad_b = torch.einsum('i...j->ij', grad_b)
         
         w_t = w[types][(slice(None),) + (None,) * (x.dim() - 2)].expand_as(grad_y)
-        a = -1 / n / v * torch.einsum('...ij,...ij->...i', grad_y, w_t)[..., None]
-        b = -1 / n / (v ** 3) * delta * torch.einsum('...ij,...ij,...ij->...i', grad_y, delta, w_t)[..., None]
-        c = grad_y * w_t / v
-        grad_x = a + b + c
+        grad_x = grad_y * w_t / v
+        grad_x += -1 / n / v * torch.einsum('...ij,...ij->...i', grad_y, w_t)[..., None]
+        grad_x += -1 / n / (v ** 3) * delta * torch.einsum('...ij,...ij,...ij->...i', grad_y, delta, w_t)[..., None]
         
         return grad_x, None, grad_w, grad_b
     

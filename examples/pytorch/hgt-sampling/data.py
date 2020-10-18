@@ -12,7 +12,7 @@ def load_ogb_mag():
     hg2 = dgl.heterograph(edges)
 
     # Initialize year
-    hg2.nodes['paper'].data['timestamp'] = hg.nodes['paper'].data['node_year'].squeeze()
+    hg2.nodes['paper'].data['timestamp'] = hg.nodes['paper'].data['year'].squeeze()
     for ntype in hg.ntypes:
         if ntype != 'paper':
             hg2.nodes[ntype].data['timestamp'] = torch.zeros(hg2.num_nodes(ntype), dtype=torch.int64)
