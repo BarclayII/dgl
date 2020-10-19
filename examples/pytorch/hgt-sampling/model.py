@@ -80,17 +80,13 @@ class HGTMessage(nn.Module):
         tau_t = edges.dst['ntype']      # int64[E]
         h_s = edges.src['h']            # float32[E, in_size]
         Q_t = edges.dst['Q']            # float32[E, n_heads, d_k]
-        T_s = edges.src['timestamp']    # int64[E]
-        T_t = edges.dst['timestamp']    # int64[E]
+        dT = edges.data['dt']           # int64[E]
         
         # Step 1. compute relative time encoding
-        # Timestamp ranges from 1900 to 2020.  We shift it so that dT becomes nonnegative, allowing us
-        # to directly index into the relative temporal encoding buffer.
         # NOTE: although the figure in the paper writes something \hat{H}^{(l-1)}[s_1] which looks as
         # if it only depends on node s_1, it actually also depends on the target node t because the
         # relative time difference can be different if t differs.  This is confirmed in the original
         # HGT implementation where h_hat_s is computed inside the message function.
-        dT = T_t - T_s + 120            # int64[E]
         h_hat_s = self.rte(h_s, dT)     # float32[E, in_size]
         
         # Step 2. compute source keys, and source messages

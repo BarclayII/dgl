@@ -1,5 +1,6 @@
 import numba
 import numpy as np
+import scipy.sparse as ssp
 import array
 import torch
 
@@ -124,7 +125,8 @@ class BudgetWithTimestamps(object):
                     continue
                 data = self.data[self.g_ntypes[index]]
                 timestamps = self.timestamps[self.g_ntypes[index]]
-                
+
+                assert deg[self.g_etypes[eid]] > 0
                 delta = 1 / deg[self.g_etypes[eid]]
                 if index not in data:
                     data[index] = delta
@@ -170,9 +172,9 @@ class HGTSampler(object):
         self.num_etypes = num_etypes
         self.num_ntypes = num_etypes
         self.g = g
-        self.g_csc = g.adjacency_matrix_scipy(False, 'csr', True)
-        self.g_csc.indptr = self.g_csc.indptr.astype('int64')
-        self.g_csc.indices = self.g_csc.indices.astype('int64')
+        # CAUTION: To implement this efficiently with numba I added an interface that exposes the
+        # underlying CSR/CSC/COO arrays of the DGL graph.
+        self.g_csc_indptr, self.g_csc_indices, self.g_csc_data = g._graph._adj(0, True, "csr")
         self.num_nodes_per_type = num_nodes_per_type
         self.num_steps = num_steps
         
@@ -187,19 +189,19 @@ class HGTSampler(object):
         B = BudgetWithTimestamps(
             self.num_ntypes,
             self.num_etypes,
-            self.g_csc.indptr,
-            self.g_csc.indices,
+            self.g_csc_indptr,
+            self.g_csc_indices,
             self.g.ndata['ntype'].numpy(),
-            self.g.edata['etype'][self.g_csc.data].numpy(),
+            self.g.edata['etype'][self.g_csc_data].numpy(),
             self.g.ndata['timestamp'].numpy(),
         )
 #         B = Budget(
 #             self.num_ntypes,
 #             self.num_etypes,
-#             self.g_csc.indptr,
-#             self.g_csc.indices,
+#             self.g_csc_indptr,
+#             self.g_csc_indices,
 #             self.g.ndata['ntype'].numpy(),
-#             self.g.edata['etype'][self.g_csc.data].numpy(),
+#             self.g.edata['etype'][self.g_csc_data].numpy(),
 #         )
         for i in range(self.num_steps):
             B.update(seed_node_set, new_nodes)
@@ -217,6 +219,12 @@ class HGTSampler(object):
 #             new_nodes = B.sample(self.num_nodes_per_type)
         seed_nodes.extend(new_nodes)
         seed_nodes_with_timestamps.extend(new_node_timestamps)
+
         sg = self.g.subgraph(torch.LongTensor(seed_nodes))
+        # Precompute the relative time difference between source and destination.
+        # Shift the time difference by 120 (the range is 1900-2020) so that the difference
+        # can be used for indexing into a precomputed sinusoid matrices.
         sg.ndata['timestamp'] = torch.LongTensor(seed_nodes_with_timestamps)
+        sg.apply_edges(lambda edges: {'dt': edges.dst['timestamp'] - edges.src['timestamp'] + 120})
+        del sg.ndata['timestamp']
         return sg, num_seed_nodes

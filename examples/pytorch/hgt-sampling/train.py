@@ -5,12 +5,12 @@ from sampler import *
 from data import *
 from model import *
 
-g, n_ntypes, n_etypes, n_classes = load_ogb_mag()
+hg, g, n_ntypes, n_etypes, n_classes = load_ogb_mag()
 STEP = 128
 P = 520
 L = 6
 NWORKERS = 6
-NEPOCHS = 5
+NEPOCHS = 10
 sampler = HGTSampler(g, n_ntypes, n_etypes, P, L)
 dl = torch.utils.data.DataLoader(
     g.ndata['train_mask'].nonzero(as_tuple=True)[0],
@@ -37,6 +37,7 @@ for _ in range(NEPOCHS):
         try:
             sg = sg.to('cuda')
             x = x.to('cuda')
+            print(i, sg.num_nodes(), sg.num_edges(), end=' ')
             y = model(sg, x)
             loss = F.cross_entropy(y[train_mask], label[train_mask].to(y.device))
             print('%.2f MiB, %.2f MiB, %.2f MiB, %.2f MiB' % (
@@ -51,4 +52,3 @@ for _ in range(NEPOCHS):
             with open('test.pkl', 'wb') as f:
                 pickle.dump((_sg, _x, label, train_mask, val_mask, test_mask), f)
             raise
-        torch.cuda.empty_cache()

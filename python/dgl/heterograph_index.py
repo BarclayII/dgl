@@ -649,6 +649,25 @@ class HeteroGraphIndex(ObjectBase):
         else:
             raise Exception("unknown format")
 
+    def _adj(self, etype, transpose, fmt):
+        rst = _CAPI_DGLHeteroGetAdj(self, int(etype), transpose, fmt)
+        srctype, dsttype = self.metagraph.find_edge(etype)
+        nrows = self.number_of_nodes(srctype) if transpose else self.number_of_nodes(dsttype)
+        ncols = self.number_of_nodes(dsttype) if transpose else self.number_of_nodes(srctype)
+        nnz = self.number_of_edges(etype)
+        if fmt == "csr":
+            indptr = utils.toindex(rst(0), self.dtype).tonumpy()
+            indices = utils.toindex(rst(1), self.dtype).tonumpy()
+            data = utils.toindex(rst(2)).tonumpy()
+            return indptr, indices, data
+        elif fmt == 'coo':
+            idx = utils.toindex(rst(0), self.dtype).tonumpy()
+            row, col = np.reshape(idx, (2, nnz))
+            data = np.arange(0, nnz)
+            return row, col, data
+        else:
+            raise Exception("unknown format")
+
     def adjacency_matrix_scipy(self, etype, transpose, fmt, return_edge_ids=None):
         """Return the scipy adjacency matrix representation of this graph.
 

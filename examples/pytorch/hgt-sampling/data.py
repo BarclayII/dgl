@@ -10,6 +10,7 @@ def load_ogb_mag():
     edges = {etype: hg.edges(etype=etype) for etype in hg.canonical_etypes}
     edges.update({(v, e + '_inv', u): (dst, src) for (u, e, v), (src, dst) in edges.items()})
     hg2 = dgl.heterograph(edges)
+    hg2 = dgl.to_simple(hg2)
 
     # Initialize year
     hg2.nodes['paper'].data['timestamp'] = hg.nodes['paper'].data['year'].squeeze()
@@ -64,4 +65,4 @@ def load_ogb_mag():
     g = dgl.add_self_loop(g)
     g.edata['etype'][-num_nodes:] = len(hg2.etypes)
 
-    return g, len(hg2.ntypes), len(hg2.etypes) + 1, dataset.num_classes
+    return hg2, g, len(hg2.ntypes), len(hg2.etypes) + 1, dataset.num_classes
