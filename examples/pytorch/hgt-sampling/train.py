@@ -26,7 +26,7 @@ dl = torch.utils.data.DataLoader(
     collate_fn=sampler.sample_subgraph,
     num_workers=N_WORKERS,
     shuffle=True,
-    drop_last=False
+    drop_last=False,
 )
 model = HGT(g.ndata['feat'].shape[1], N_HIDDEN, N_HEADS, n_etypes, n_ntypes, N_LAYERS, n_classes)
 model = model.cuda()
@@ -42,6 +42,7 @@ scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, pct_start=0.05, annea
 
 best_val_acc = 0
 train_step = 0
+exceptional = 0
 log = open('train.log', 'w')
 
 def train(dl, model):
@@ -49,6 +50,12 @@ def train(dl, model):
     model.train()
     with tqdm.tqdm(dl) as tq:
         for i, (sg, num_seed_nodes) in enumerate(tq):
+            if sg.num_edges() > 200000:
+                with open('test%d.pkl' % exceptional, 'wb') as f:
+                    pickle.dump(sg, f)
+                    exceptional += 1
+                    continue
+
             x = sg.ndata.pop('feat')
             label = sg.ndata.pop('label')
             train_mask = sg.ndata.pop('train_mask')
@@ -76,7 +83,7 @@ def train(dl, model):
             tq.set_postfix({
                 'acc': '%.3f' % acc, 'loss': '%.3f' % loss,
                 'val_acc': '%.3f' % val_acc, 'test_acc': '%.3f' % test_acc}, refresh=False)
-            if i % 20 == 0:
+            if i % 100 == 99:
                 print(
                     'acc', '%.3f' % acc, 'loss', '%.3f' % loss,
                     'val_acc', '%.3f' % val_acc, 'test_acc', '%.3f' % test_acc, file=log, flush=True)
@@ -118,6 +125,7 @@ def evaluate(dl, model):
 
 for _ in range(N_EPOCHS):
     train(dl, model)
+    break
     _, val_acc, _ = evaluate(dl, model)
     # Save best model
     if best_val_acc < val_acc:
