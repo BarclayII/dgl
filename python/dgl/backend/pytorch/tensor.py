@@ -14,8 +14,7 @@ from ...function.base import TargetCode
 from ...base import dgl_warning
 
 if LooseVersion(th.__version__) < LooseVersion("1.5.0"):
-    dgl_warning("Detected an old version of PyTorch. Suggest using torch>=1.5.0 "
-                "for the best experience.")
+    raise DGLError("Detected an old version of PyTorch. DGL requires torch>=1.5.0.")
 
 def data_type_dict():
     return {'float16' : th.float16,
