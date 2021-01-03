@@ -2,13 +2,14 @@
 How Does DGL Represent A Graph?
 ===============================
 
-Goal of this tutorial:
+By the end of this tutorial you will be able to:
 
--  Construct a graph in DGL.
+-  Construct a graph in DGL from scratch.
 -  Assigning node and edge features to a graph.
--  Query a DGL graph.
--  Transform a DGL graph into another graph.
--  Loading and saving DGL graph objects.
+-  Query properties of a DGL graph such as node degrees and
+   connectivity.
+-  Transform a DGL graph into another graph with DGL functions.
+-  Load and save DGL graph objects.
 
 """
 
@@ -49,9 +50,9 @@ print(g.edges())
 
 
 ######################################################################
-# .. container:: alert alert-info
+# .. note::
 # 
-#    **Note:** The graphs in DGL are always directed since messages sent
+#    The graphs in DGL are always directed since messages sent
 #    from one node to the other are often different between both
 #    directions. If you want to handle undirected graphs, you may consider
 #    treating it as a bidirectional graph. See `Graph
@@ -88,9 +89,9 @@ print(g.edata['a'])
 
 
 ######################################################################
-# .. container:: alert alert-info
+# .. note::
 # 
-#    **Note:** The vast development of deep learning has provided us many
+#    The vast development of deep learning has provided us many
 #    ways to encode various types of attributes into numerical features.
 #    Here are some general suggestions:
 # 

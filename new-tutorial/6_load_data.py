@@ -6,7 +6,7 @@ This tutorial assumes that you already know :ref:`the basics of training a
 GNN for node classification <sphx_glr_new-tutorial_1_introduction.py>` and `how to
 create, load, and store a DGL graph <sphx_glr_new-tutorial_2_dglgraph.py>`.
 
-Goal of this tutorial:
+By the end of this tutorial, you will be able to
 
 -  Create your own graph dataset for node classification, link
    prediction, or graph classification.

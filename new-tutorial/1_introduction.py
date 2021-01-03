@@ -7,9 +7,12 @@ this introductory tutorial, you will learn the basic workflow of using
 GNNs for node classification, i.e. predicting the category of a node in
 a graph.
 
-Goal of this tutorial:
+By completing this tutorial, you will be able to
 
--  Train a node classification neural network on a single small graph.
+-  Load a DGL-provided dataset.
+-  Build a GNN model with DGL-provided neural network modules.
+-  Train and evaluate a GNN model for node classification on either CPU
+   or GPU.
 
 This tutorial assumes that you have experience in building neural
 networks with PyTorch.

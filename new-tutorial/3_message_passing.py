@@ -3,15 +3,14 @@ Write your own GNN module
 =========================
 
 This tutorial assumes that you already know :ref:`the basics of training a
-GNN for node classification <sphx_glr_new-tutorial_1_introduction.py>`__. However,
+GNN for node classification <sphx_glr_new-tutorial_1_introduction.py>`. However,
 sometimes you would like to invent a new way of aggregating neighbor
 information or a new way of using the aggregation.
 
-Goal of this tutorial:
+By the end of this tutorial you will be able to
 
 -  Understand DGL’s message passing APIs.
--  Implement GraphSAGE convolution by your own.
--  Implement Graph Attention Networks by your own.
+-  Implement GraphSAGE convolution module by your own.
 
 """
 

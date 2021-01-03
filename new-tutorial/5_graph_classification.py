@@ -2,9 +2,13 @@
 Training a GNN for Graph Classification
 =======================================
 
-Goal of this tutorial:
+By the end of this tutorial, you will be able to
 
--  Train a graph classification neural network on a dataset of graphs.
+-  Load a DGL-provided graph classification dataset.
+-  Understand what readout function does.
+-  Understand how to deal with a minibatch of graphs.
+-  Build a GNN-based graph classification model.
+-  Train and evaluate the model on a DGL-provided dataset.
 
 """
 

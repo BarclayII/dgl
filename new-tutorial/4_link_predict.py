@@ -8,9 +8,10 @@ the category of a node in a graph. This tutorial will teach you how to
 train a GNN for link prediction, i.e. predicting the existence of an
 edge between two arbitrary nodes in a graph.
 
-Goal of this tutorial:
+By the end of this tutorial you will be able to
 
 -  Build a GNN-based link prediction model.
+-  Train and evaluate the model on a small DGL-provided dataset.
 
 """
 
