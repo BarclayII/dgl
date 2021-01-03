@@ -187,12 +187,12 @@ train(g, model)
 # What’s next?
 # ------------
 # 
-# -  :ref:`How does DGL represent a graph <sphx_glr_new-tutorial_2_dglgraph.py>`?
-# -  :ref:`Write your own GNN module <sphx_glr_new-tutorial_3_message_passing.py>`.
-# -  :ref:`Link prediction (predicting existence of edges) on full
-#    graph <sphx_glr_new-tutorial_4_link_predict.py>`.
-# -  :ref:`Graph classification <sphx_glr_new-tutorial_5_graph_classification.py>`.
-# -  :ref:`Make your own dataset <sphx_glr_new-tutorial_6_load_data.py>`.
+# -  :doc:`How does DGL represent a graph <2_dglgraph>`?
+# -  :doc:`Write your own GNN module <3_message_passing>`.
+# -  :doc:`Link prediction (predicting existence of edges) on full
+#    graph <4_link_predict>`.
+# -  :doc:`Graph classification <5_graph_classification>`.
+# -  :doc:`Make your own dataset <6_load_data>`.
 # -  :ref:`The list of supported graph convolution
 #    modules <apinn-pytorch>`.
 # -  :ref:`The list of datasets provided by DGL <apidata>`.

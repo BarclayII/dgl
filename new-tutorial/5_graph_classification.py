@@ -78,10 +78,13 @@ def collate(examples):
 
 ######################################################################
 # You can also use various dataset samplers provided in
-# ```torch.utils.data.sampler`` <https://pytorch.org/docs/stable/data.html#data-loading-order-and-sampler>`__.
+# |torch.utils.data.sampler|_.
 # For example, this tutorial creates a training ``DataLoader`` and test
 # ``DataLoader``, using ``SubsetRandomSampler`` to tell PyTorch to sample
 # from only a subset of the dataset.
+#
+# .. |torch.utils.data.sampler| replace:: ``torch.utils.data.sampler``
+# .. _torch.utils.data.sampler: https://pytorch.org/docs/stable/data.html#data-loading-order-and-sampler
 # 
 
 num_examples = len(dataset)
@@ -120,7 +123,7 @@ print(batch)
 # 
 # The first element is a batched ``DGLGraph``, which itself is also a
 # ``DGLGraph`` (so you can still treat it as a normal ``DGLGraph`` object
-# as in :ref:`here <sphx_glr_new-tutorial_2_dglgraph.py>`). It however contains the information
+# as in :doc:`here <2_dglgraph>`). It however contains the information
 # necessary for recovering the original graphs, such as the number of
 # nodes and edges of each graph element.
 # 
@@ -143,7 +146,7 @@ print(graphs)
 # (GCN) <http://tkipf.github.io/graph-convolutional-networks/>`__. Each of
 # its layer computes new node representations by aggregating neighbor
 # information. If you have gone through the
-# :ref:`introduction <sphx_glr_new-tutorial_1_introduction.py>`, you will need to notice two
+# :doc:`introduction <1_introduction>`, you will need to notice two
 # differences:
 # 
 # -  Since you will be predicting a single category for the *entire graph*

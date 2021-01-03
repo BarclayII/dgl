@@ -2,7 +2,7 @@
 Link Prediction using Graph Neural Networks
 ===========================================
 
-In the :ref:`introduction <sphx_glr_new-tutorial_1_introduction.py>`, you already learned the
+In the :doc:`introduction <1_introduction>`, you already learned the
 basic workflow of using GNNs for node classification, i.e. predicting
 the category of a node in a graph. This tutorial will teach you how to
 train a GNN for link prediction, i.e. predicting the existence of an
@@ -57,7 +57,7 @@ import scipy.sparse as sp
 # Load graph and features
 # -----------------------
 # 
-# Following the :ref:`introduction <sphx_glr_new-tutorial_1_introduction.py>`, we first load the
+# Following the :doc:`introduction <1_introduction>`, we first load the
 # Cora dataset.
 # 
 

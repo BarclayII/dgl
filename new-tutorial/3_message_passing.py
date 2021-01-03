@@ -2,8 +2,8 @@
 Write your own GNN module
 =========================
 
-This tutorial assumes that you already know :ref:`the basics of training a
-GNN for node classification <sphx_glr_new-tutorial_1_introduction.py>`. However,
+This tutorial assumes that you already know :doc:`the basics of training a
+GNN for node classification <1_introduction>`. However,
 sometimes you would like to invent a new way of aggregating neighbor
 information or a new way of using the aggregation.
 
@@ -23,7 +23,7 @@ import torch.nn.functional as F
 ######################################################################
 # This tutorial assumes that you already know the pipeline of full-graph
 # node classification. If not, please refer to the
-# :ref:`introduction <sphx_glr_new-tutorial_1_introduction.py>`.
+# :doc:`introduction <1_introduction>`.
 # 
 # The following code for data loading and training loop is directly copied
 # from the introduction tutorial.

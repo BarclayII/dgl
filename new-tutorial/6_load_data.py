@@ -2,9 +2,9 @@
 Make Your Own Dataset
 =====================
 
-This tutorial assumes that you already know :ref:`the basics of training a
-GNN for node classification <sphx_glr_new-tutorial_1_introduction.py>` and `how to
-create, load, and store a DGL graph <sphx_glr_new-tutorial_2_dglgraph.py>`.
+This tutorial assumes that you already know :doc:`the basics of training a
+GNN for node classification <1_introduction>` and :doc:`how to
+create, load, and store a DGL graph <2_dglgraph>`.
 
 By the end of this tutorial, you will be able to
 
