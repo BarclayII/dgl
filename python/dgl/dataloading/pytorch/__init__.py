@@ -1,9 +1,11 @@
 """DGL PyTorch DataLoaders"""
 import inspect
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 from ..dataloader import NodeCollator, EdgeCollator, GraphCollator
 from ...distributed import DistGraph
 from ...distributed import DistDataLoader
+from ...base import DGLError
 
 def _remove_kwargs_dist(kwargs):
     if 'num_workers' in kwargs:
@@ -170,6 +172,22 @@ class _EdgeDataLoaderIter:
             _restore_blocks_storage(result[-1], self.edge_dataloader.collator.g_sampling)
             return result
 
+def _create_distributed_sampler(dataset, num_replicas, rank, shuffle, seed, drop_last):
+    if num_replicas == 'auto':
+        num_replicas = None
+
+    if rank == 'auto':
+        rank = None
+
+    sampler = DistributedSampler(
+        dataset,
+        num_replicas,
+        rank,
+        shuffle=shuffle,
+        seed=seed,
+        drop_last=drop_last)
+    return sampler
+
 class NodeDataLoader:
     """PyTorch dataloader for batch-iterating over a set of nodes, generating the list
     of blocks as computation dependency of the said minibatch.
@@ -182,8 +200,50 @@ class NodeDataLoader:
         The node set to compute outputs.
     block_sampler : dgl.dataloading.BlockSampler
         The neighborhood sampler.
+    num_replicas : int or ``'auto'``, optional
+        The number of processes participating in distributed training, or
+        0 to work under standalone mode without distributed training.
+
+        Set to ``'auto'`` to retrieve the number of processes from the
+        current distributed group.
+
+        Default: 0.
+    rank : int or ``'auto'``, optional
+        The rank of the current process within :attr:`num_replicas`.
+
+        Set to ``'auto'`` to retrive the rank of current process from the
+        current distributed group.
+
+        Only takes effect when distributed training is enabled (i.e.
+        ``num_replicas != 0``).
+
+        Default: ``'auto'``.
+    shuffle : bool, optional
+        Whether to have the data reshuffled at every epoch.
+
+        Default: True.
+    drop_last : bool, optional
+        Whether to drop the last incomplete batch.
+
+        Default: True
+    seed : int, optional
+        Set the seed used to shuffle the sampler if ``shuffle=True``.  This number
+        should be identical across all processes in the distributed group.
+
+        Only takes effect when distributed training is enabled (i.e.
+        ``num_replicas != 0``).
+
+        Default: 0.
     kwargs : dict
-        Arguments being passed to :py:class:`torch.utils.data.DataLoader`.
+        Other arguments being passed to :py:class:`torch.utils.data.DataLoader`.
+
+    .. warning::
+
+        In distributed mode, calling the :meth:`set_epoch` method at
+        the beginning of each epoch **before** creating the :class:`DataLoader` iterator
+        is necessary to make shuffling work properly across multiple epochs. Otherwise,
+        the same ordering will be always used.  This is the same behavior as
+        ``torch.utils.data.distributed.DistributedSampler``.
 
     Examples
     --------
@@ -200,7 +260,7 @@ class NodeDataLoader:
     """
     collator_arglist = inspect.getfullargspec(NodeCollator).args
 
-    def __init__(self, g, nids, block_sampler, **kwargs):
+    def __init__(self, g, nids, block_sampler, num_replicas=0, rank='auto', seed=0, **kwargs):
         collator_kwargs = {}
         dataloader_kwargs = {}
         for k, v in kwargs.items():
@@ -209,19 +269,47 @@ class NodeDataLoader:
             else:
                 dataloader_kwargs[k] = v
 
+        shuffle = kwargs.get('shuffle', True)
+        drop_last = kwargs.get('drop_last', True)
+
+        if isinstance(g, DistGraph):
+            self.collator = NodeCollator(g, nids, block_sampler, **collator_kwargs)
+        else:
+            self.collator = _NodeCollator(g, nids, block_sampler, **collator_kwargs)
+
+        # Decide whether to use DistributedSampler
+        if num_replicas != 0:
+            sampler = _create_distributed_sampler(
+                self.collator.dataset,
+                num_replicas,
+                rank,
+                shuffle,
+                seed,
+                drop_last)
+            # The DataLoader should have shuffle set to False.
+            shuffle = False
+            self.use_distributed_sampler = True
+        else:
+            sampler = kwargs.get('sampler', None)
+            self.use_distributed_sampler = False
+
         if isinstance(g, DistGraph):
             # Distributed DataLoader currently does not support heterogeneous graphs
             # and does not copy features.  Fallback to normal solution
-            self.collator = NodeCollator(g, nids, block_sampler, **collator_kwargs)
+            # TODO: DistributedSampler for DistDataLoader?
             _remove_kwargs_dist(dataloader_kwargs)
             self.dataloader = DistDataLoader(self.collator.dataset,
                                              collate_fn=self.collator.collate,
+                                             shuffle=shuffle,
+                                             drop_last=drop_last,
                                              **dataloader_kwargs)
             self.is_distributed = True
         else:
-            self.collator = _NodeCollator(g, nids, block_sampler, **collator_kwargs)
             self.dataloader = DataLoader(self.collator.dataset,
                                          collate_fn=self.collator.collate,
+                                         sampler=sampler,
+                                         shuffle=shuffle,
+                                         drop_last=drop_last,
                                          **dataloader_kwargs)
             self.is_distributed = False
 
@@ -236,6 +324,23 @@ class NodeDataLoader:
     def __len__(self):
         """Return the number of batches of the data loader."""
         return len(self.dataloader)
+
+    def set_epoch(self, epoch):
+        """Sets the epoch for this DataLoader.
+
+        When :attr:`shuffle=True`, ensures all replicas use a different random ordering
+        for each epoch (whilst keeping the ordering across the replicas the same).
+
+        Only affects distributed training mode.
+
+        Parameters
+        ----------
+        epoch : int
+            The epoch number.
+        """
+        if not self.use_distributed_sampler:
+            raise DGLError('Not in distributed training mode.')
+        self.sampler.set_epoch(epoch)
 
 class EdgeDataLoader:
     """PyTorch dataloader for batch-iterating over a set of edges, generating the list
@@ -301,6 +406,40 @@ class EdgeDataLoader:
 
         See the description of the argument with the same name in the docstring of
         :class:`~dgl.dataloading.EdgeCollator` for more details.
+    num_replicas : int or ``'auto'``, optional
+        The number of processes participating in distributed training, or
+        0 to work under standalone mode without distributed training.
+
+        Set to ``'auto'`` to retrieve the number of processes from the
+        current distributed group.
+
+        Default: 0.
+    rank : int or ``'auto'``, optional
+        The rank of the current process within :attr:`num_replicas`.
+
+        Set to ``'auto'`` to retrive the rank of current process from the
+        current distributed group.
+
+        Only takes effect when distributed training is enabled (i.e.
+        ``num_replicas != 0``).
+
+        Default: ``'auto'``.
+    shuffle : bool, optional
+        Whether to have the data reshuffled at every epoch.
+
+        Default: True.
+    drop_last : bool, optional
+        Whether to drop the last incomplete batch.
+
+        Default: True
+    seed : int, optional
+        Set the seed used to shuffle the sampler if ``shuffle=True``.  This number
+        should be identical across all processes in the distributed group.
+
+        Only takes effect when distributed training is enabled (i.e.
+        ``num_replicas != 0``).
+
+        Default: 0.
     kwargs : dict
         Arguments being passed to :py:class:`torch.utils.data.DataLoader`.
 
@@ -397,7 +536,7 @@ class EdgeDataLoader:
     """
     collator_arglist = inspect.getfullargspec(EdgeCollator).args
 
-    def __init__(self, g, eids, block_sampler, **kwargs):
+    def __init__(self, g, eids, block_sampler, num_replicas=0, rank='auto', seed=0, **kwargs):
         collator_kwargs = {}
         dataloader_kwargs = {}
         for k, v in kwargs.items():
@@ -407,11 +546,35 @@ class EdgeDataLoader:
                 dataloader_kwargs[k] = v
         self.collator = _EdgeCollator(g, eids, block_sampler, **collator_kwargs)
 
+        shuffle = kwargs.get('shuffle', True)
+        drop_last = kwargs.get('drop_last', True)
+
+        # Decide whether to use DistributedSampler
+        if num_replicas != 0:
+            sampler = _create_distributed_sampler(
+                self.collator.dataset,
+                num_replicas,
+                rank,
+                shuffle,
+                seed,
+                drop_last)
+            # The DataLoader should have shuffle set to False.
+            shuffle = False
+            self.use_distributed_sampler = True
+        else:
+            sampler = kwargs.get('sampler', None)
+            self.use_distributed_sampler = False
+
         assert not isinstance(g, DistGraph), \
                 'EdgeDataLoader does not support DistGraph for now. ' \
                 + 'Please use DistDataLoader directly.'
         self.dataloader = DataLoader(
-            self.collator.dataset, collate_fn=self.collator.collate, **dataloader_kwargs)
+            self.collator.dataset,
+            collate_fn=self.collator.collate,
+            sampler=sampler,
+            shuffle=shuffle,
+            drop_last=drop_last,
+            **dataloader_kwargs)
 
     def __iter__(self):
         """Return the iterator of the data loader."""
@@ -420,6 +583,23 @@ class EdgeDataLoader:
     def __len__(self):
         """Return the number of batches of the data loader."""
         return len(self.dataloader)
+
+    def set_epoch(self, epoch):
+        """Sets the epoch for this DataLoader.
+
+        When :attr:`shuffle=True`, ensures all replicas use a different random ordering
+        for each epoch (whilst keeping the ordering across the replicas the same).
+
+        Only affects distributed training mode.
+
+        Parameters
+        ----------
+        epoch : int
+            The epoch number.
+        """
+        if not self.use_distributed_sampler:
+            raise DGLError('Not in distributed training mode.')
+        self.sampler.set_epoch(epoch)
 
 class GraphDataLoader:
     """PyTorch dataloader for batch-iterating over a set of graphs, generating the batched

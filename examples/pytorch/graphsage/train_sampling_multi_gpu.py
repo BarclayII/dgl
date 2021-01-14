@@ -170,7 +170,8 @@ def run(proc_id, n_gpus, args, devices, data):
         batch_size=args.batch_size,
         shuffle=True,
         drop_last=False,
-        num_workers=args.num_workers)
+        num_workers=args.num_workers,
+        num_replicas='auto')
 
     # Define model and optimizer
     model = SAGE(in_feats, args.num_hidden, n_classes, args.num_layers, F.relu, args.dropout)
@@ -185,6 +186,7 @@ def run(proc_id, n_gpus, args, devices, data):
     iter_tput = []
     for epoch in range(args.num_epochs):
         tic = time.time()
+        dataloader.set_epoch(epoch)
 
         # Loop over the dataloader to sample the computation dependency graph as a list of
         # blocks.
