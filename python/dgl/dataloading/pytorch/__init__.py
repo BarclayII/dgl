@@ -1,7 +1,8 @@
 """DGL PyTorch DataLoaders"""
 import inspect
 from torch.utils.data import DataLoader
-from torch.utils.data.distributed import DistributedSampler
+# PyTorch 1.6-'s DistributedSampler does not work well with drop_last=True.
+from .distributed_sampler import DistributedSampler
 from ..dataloader import NodeCollator, EdgeCollator, GraphCollator
 from ...distributed import DistGraph
 from ...distributed import DistDataLoader
@@ -172,6 +173,9 @@ class _EdgeDataLoaderIter:
             _restore_blocks_storage(result[-1], self.edge_dataloader.collator.g_sampling)
             return result
 
+# PyTorch 1.6.0-'s DistributedSampler does not work well with drop_last.
+# This is a patch to make it work.  Does not impact 1.7+.
+
 def _create_distributed_sampler(dataset, num_replicas, rank, shuffle, seed, drop_last):
     if num_replicas == 'auto':
         num_replicas = None
@@ -179,7 +183,7 @@ def _create_distributed_sampler(dataset, num_replicas, rank, shuffle, seed, drop
     if rank == 'auto':
         rank = None
 
-    sampler = DistributedSampler(
+    sampler = _DistributedSampler(
         dataset,
         num_replicas,
         rank,
