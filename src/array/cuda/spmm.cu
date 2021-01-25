@@ -5,6 +5,7 @@
  */
 #include <dgl/array.h>
 #include "./spmm.cuh"
+#include "./ge_spmm.cuh"
 #include "./functor.cuh"
 #include "../../runtime/cuda/cuda_common.h"
 
@@ -121,8 +122,6 @@ void CusparseCsrmm2(
     CUSPARSE_CALL(cusparseCreate(&(thr_entry->cusparse_handle)));
   }
   CUSPARSE_CALL(cusparseSetStream(thr_entry->cusparse_handle, thr_entry->stream));
-  // allocate matrix for temporary transposed output
-  DType* trans_out = static_cast<DType*>(device->AllocWorkspace(ctx, m * n * sizeof(DType)));
   // all one data array
   DType* valptr = nullptr;
   if (!A_data) {
@@ -141,25 +140,25 @@ void CusparseCsrmm2(
       CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
       CUSPARSE_INDEX_BASE_ZERO, cuda_dtype));
   CUSPARSE_CALL(cusparseCreateDnMat(&matB,
-      n, k, n,
-      const_cast<DType*>(B_data), cuda_dtype, CUSPARSE_ORDER_COL));
+      k, n, n,
+      const_cast<DType*>(B_data), cuda_dtype, CUSPARSE_ORDER_ROW));
   CUSPARSE_CALL(cusparseCreateDnMat(&matC,
-      m, n, m,
-      trans_out, cuda_dtype, CUSPARSE_ORDER_COL));
+      m, n, n,
+      C_data, cuda_dtype, CUSPARSE_ORDER_ROW));
 
   auto transA = CUSPARSE_OPERATION_NON_TRANSPOSE;
-  auto transB = CUSPARSE_OPERATION_TRANSPOSE;
+  auto transB = CUSPARSE_OPERATION_NON_TRANSPOSE;
   size_t workspace_size;
   CUSPARSE_CALL(cusparseSpMM_bufferSize(
       thr_entry->cusparse_handle, transA, transB,
       &alpha, matA, matB, &beta, matC,
-      cuda_dtype, CUSPARSE_CSRMM_ALG1,
+      cuda_dtype, CUSPARSE_SPMM_CSR_ALG2,
       &workspace_size));
   void* workspace = device->AllocWorkspace(ctx, workspace_size);
   CUSPARSE_CALL(cusparseSpMM(
       thr_entry->cusparse_handle, transA, transB,
       &alpha, matA, matB, &beta, matC,
-      cuda_dtype, CUSPARSE_CSRMM_ALG1,
+      cuda_dtype, CUSPARSE_SPMM_CSR_ALG2,
       workspace));
   device->FreeWorkspace(ctx, workspace);
 
@@ -167,6 +166,9 @@ void CusparseCsrmm2(
   CUSPARSE_CALL(cusparseDestroyDnMat(matB));
   CUSPARSE_CALL(cusparseDestroyDnMat(matC));
 #else
+  // allocate matrix for temporary transposed output
+  DType* trans_out = static_cast<DType*>(device->AllocWorkspace(ctx, m * n * sizeof(DType)));
+
   cusparseMatDescr_t descr;
   CUSPARSE_CALL(cusparseCreateMatDescr(&descr));
   CUSPARSE_CALL(cusparseSetMatType(descr, CUSPARSE_MATRIX_TYPE_GENERAL));
@@ -181,9 +183,6 @@ void CusparseCsrmm2(
       static_cast<int32_t*>(csr.indices->data),
       B_data, n, &beta, trans_out, m));
   CUSPARSE_CALL(cusparseDestroyMatDescr(descr));
-#endif
-  if (valptr)
-    device->FreeWorkspace(ctx, valptr);
   // transpose the output matrix
   if (!thr_entry->cublas_handle)
     CUBLAS_CALL(cublasCreate(&(thr_entry->cublas_handle)));
@@ -197,6 +196,9 @@ void CusparseCsrmm2(
       &beta, nullptr, n,
       C_data, n));
   device->FreeWorkspace(ctx, trans_out);
+#endif
+  if (valptr)
+    device->FreeWorkspace(ctx, valptr);
 }
 }  // namespace cusparse
 
@@ -238,8 +240,12 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
              NDArray efeat,
              NDArray out,
              std::vector<NDArray> out_aux) {
+  int64_t feat_len = bcast.out_len;
+  bool is_scalar_efeat = efeat.NumElements() == csr.indices->shape[0];
+  bool use_efeat = op != "copy_lhs";
+
   if (reduce == "sum") {
-    if (sizeof(IdType) == 4 && op == "copy_lhs") {
+    if (sizeof(IdType) == 4 && op == "copy_lhs") {  // cusparse
       int64_t x_length = 1;
       for (int i = 1; i < ufeat->ndim; ++i)
         x_length *= ufeat->shape[i];
@@ -249,7 +255,7 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
           nullptr,
           static_cast<DType*>(out->data),
           x_length);
-    } else if (sizeof(IdType) == 4 && op == "mul" && efeat.NumElements() == csr.indices->shape[0]) {
+    } else if (sizeof(IdType) == 4 && op == "mul" && is_scalar_efeat) {  // cusparse
       int64_t x_length = 1;
       for (int i = 1; i < ufeat->ndim; ++i)
         x_length *= ufeat->shape[i];
@@ -261,7 +267,7 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
           static_cast<DType*>(efeat->data),
           static_cast<DType*>(out->data),
           x_length);
-    } else {
+    } else {  // general kernel
       SWITCH_OP(op, Op, {
         cuda::SpMMCsr<IdType, DType, Op, cuda::reduce::Sum<IdType, DType> >(
             bcast, csr, ufeat, efeat, out, NullArray(), NullArray());

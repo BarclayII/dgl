@@ -36,12 +36,13 @@ Getting Started
 * :doc:`Installation<install/index>`.
 * :doc:`Quickstart tutorial<tutorials/basics/1_first>` for absolute beginners.
 * :doc:`User guide<guide/index>`.
+* :doc:`用户指南(User guide)中文版<guide_cn/index>`.
 * :doc:`API reference manual<api/python/index>`.
 * :doc:`End-to-end model tutorials<tutorials/models/index>` for learning DGL by popular models on graphs.
 
 ..
   Follow the :doc:`instructions<install/index>` to install DGL.
-  :doc:`DGL at a glance<tutorials/basics/1_first>` is the most common place to get started with.
+  :doc:`<new-tutorial/1_introduction>` is the most common place to get started with.
   It offers a broad experience of using DGL for deep learning on graph data.
 
   API reference document lists more endetailed specifications of each API and GNN modules,
@@ -49,9 +50,11 @@ Getting Started
 
   You can learn other basic concepts of DGL through the dedicated tutorials.
 
-  * Learn constructing graphs and set/get node and edge features :doc:`here<tutorials/basics/2_basics>`.
-  * Learn performing computation on graph using message passing :doc:`here<tutorials/basics/3_pagerank>`.
-  * Learn processing multiple graph samples in a batch :doc:`here<tutorials/basics/4_batch>`.
+  * Learn constructing, saving and loading graphs with node and edge features :doc:`here<new-tutorial/2_dglgraph>`.
+  * Learn performing computation on graph using message passing :doc:`here<new-tutorial/3_message_passing>`.
+  * Learn link prediction with DGL :doc:`here<new-tutorial/4_link_predict>`.
+  * Learn graph classification with DGL :doc:`here<new-tutorial/5_graph_classification>`.
+  * Learn creating your own dataset for DGL :doc:`here<new-tutorial/6_load_data>`.
   * Learn working with heterogeneous graph data :doc:`here<tutorials/basics/5_hetero>`.
 
   End-to-end model tutorials are other good starting points for learning DGL and popular
@@ -78,7 +81,7 @@ Getting Started
 
    install/index
    install/backend
-   tutorials/basics/1_first
+   new-tutorial/1_introduction
 
 .. toctree::
    :maxdepth: 2

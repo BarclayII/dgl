@@ -3,6 +3,8 @@
 5.4 Graph Classification
 ----------------------------------
 
+:ref:`(中文版) <guide_cn-training-graph-classification>`
+
 Instead of a big single graph, sometimes one might have the data in the
 form of multiple graphs, for example a list of different types of
 communities of people. By characterizing the friendship among people in
@@ -51,6 +53,32 @@ components corresponding to the original small graphs.
    :alt: Batched Graph
 
    Batched Graph
+
+The following example calls :func:`dgl.batch` on a list of graphs.
+A batched graph is a single graph, while it also carries information
+about the list.
+
+.. code:: python
+
+    import dgl
+    import torch as th
+
+    g1 = dgl.graph((th.tensor([0, 1, 2]), th.tensor([1, 2, 3])))
+    g2 = dgl.graph((th.tensor([0, 0, 0, 1]), th.tensor([0, 1, 2, 0])))
+
+    bg = dgl.batch([g1, g2])
+    bg
+    # Graph(num_nodes=7, num_edges=7,
+    #       ndata_schemes={}
+    #       edata_schemes={})
+    bg.batch_size
+    # 2
+    bg.batch_num_nodes()
+    # tensor([4, 3])
+    bg.batch_num_edges()
+    # tensor([3, 4])
+    bg.edges()
+    # (tensor([0, 1, 2, 4, 4, 4, 5], tensor([1, 2, 3, 4, 5, 6, 4]))
 
 Graph Readout
 ^^^^^^^^^^^^^
@@ -165,32 +193,17 @@ Assuming that one have a graph classification dataset as introduced in
 
 Each item in the graph classification dataset is a pair of a graph and
 its label. One can speed up the data loading process by taking advantage
-of the DataLoader, by customizing the collate function to batch the
-graphs:
-
-.. code:: python
-
-    def collate(samples):
-        graphs, labels = map(list, zip(*samples))
-        batched_graph = dgl.batch(graphs)
-        batched_labels = torch.tensor(labels)
-        return batched_graph, batched_labels
-
-Then one can create a DataLoader that iterates over the dataset of
+of the GraphDataLoader to iterate over the dataset of
 graphs in mini-batches.
 
 .. code:: python
 
-    from torch.utils.data import DataLoader
-    dataloader = DataLoader(
+    from dgl.dataloading import GraphDataLoader
+    dataloader = GraphDataLoader(
         dataset,
         batch_size=1024,
-        collate_fn=collate,
         drop_last=False,
         shuffle=True)
-
-Loop
-^^^^
 
 Training loop then simply involves iterating over the dataloader and
 updating the model.

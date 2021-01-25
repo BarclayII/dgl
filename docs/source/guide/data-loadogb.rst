@@ -3,6 +3,8 @@
 4.5 Loading OGB datasets using ``ogb`` package
 ----------------------------------------------
 
+:ref:`(中文版) <guide_cn-data-pipeline-loadogb>`
+
 `Open Graph Benchmark (OGB) <https://ogb.stanford.edu/docs/home/>`__ is
 a collection of benchmark datasets. The official OGB package
 `ogb <https://github.com/snap-stanford/ogb>`__ provides APIs for
@@ -24,7 +26,7 @@ Prediction* tasks.
     import dgl
     import torch
     from ogb.graphproppred import DglGraphPropPredDataset
-    from torch.utils.data import DataLoader
+    from dgl.dataloading import GraphDataLoader
     
     
     def _collate_fn(batch):
@@ -39,9 +41,9 @@ Prediction* tasks.
     dataset = DglGraphPropPredDataset(name='ogbg-molhiv')
     split_idx = dataset.get_idx_split()
     # dataloader
-    train_loader = DataLoader(dataset[split_idx["train"]], batch_size=32, shuffle=True, collate_fn=_collate_fn)
-    valid_loader = DataLoader(dataset[split_idx["valid"]], batch_size=32, shuffle=False, collate_fn=_collate_fn)
-    test_loader = DataLoader(dataset[split_idx["test"]], batch_size=32, shuffle=False, collate_fn=_collate_fn)
+    train_loader = GraphDataLoader(dataset[split_idx["train"]], batch_size=32, shuffle=True, collate_fn=_collate_fn)
+    valid_loader = GraphDataLoader(dataset[split_idx["valid"]], batch_size=32, shuffle=False, collate_fn=_collate_fn)
+    test_loader = GraphDataLoader(dataset[split_idx["test"]], batch_size=32, shuffle=False, collate_fn=_collate_fn)
 
 Loading *Node Property Prediction* datasets is similar, but note that
 there is only one graph object in this kind of dataset.
@@ -61,7 +63,7 @@ there is only one graph object in this kind of dataset.
     valid_label = dataset.labels[split_idx['valid']]
     test_label = dataset.labels[split_idx['test']]
 
-*Link Property Prediction* datasets also contain one graph per dataset:
+*Link Property Prediction* datasets also contain one graph per dataset.
 
 .. code:: 
 

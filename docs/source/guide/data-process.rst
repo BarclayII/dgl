@@ -3,6 +3,8 @@
 4.3 Process data
 ----------------
 
+:ref:`(中文版) <guide_cn-data-pipeline-process>`
+
 One can implement the data processing code in function ``process()``, and it
 assumes that the raw data is located in ``self.raw_dir`` already. There
 are typically three types of tasks in machine learning on graphs: graph
@@ -94,21 +96,14 @@ follows:
     import dgl
     import torch
 
-    from torch.utils.data import DataLoader
+    from dgl.dataloading import GraphDataLoader
     
     # load data
     dataset = QM7bDataset()
     num_labels = dataset.num_labels
     
-    # create collate_fn
-    def _collate_fn(batch):
-        graphs, labels = batch
-        g = dgl.batch(graphs)
-        labels = torch.tensor(labels, dtype=torch.long)
-        return g, labels
-    
     # create dataloaders
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=_collate_fn)
+    dataloader = GraphDataLoader(dataset, batch_size=1, shuffle=True)
     
     # training
     for epoch in range(100):
@@ -141,7 +136,7 @@ builtin dataset `CitationGraphDataset <https://docs.dgl.ai/en/0.5.x/_modules/dgl
 .. code:: 
 
     from dgl.data import DGLBuiltinDataset
-    from dgl.data.utils import _get_dgl_url, generate_mask_tensor
+    from dgl.data.utils import _get_dgl_url
     
     class CitationGraphDataset(DGLBuiltinDataset):
         _urls = {
@@ -168,9 +163,9 @@ builtin dataset `CitationGraphDataset <https://docs.dgl.ai/en/0.5.x/_modules/dgl
             # build graph
             g = dgl.graph(graph)
             # splitting masks
-            g.ndata['train_mask'] = generate_mask_tensor(train_mask)
-            g.ndata['val_mask'] = generate_mask_tensor(val_mask)
-            g.ndata['test_mask'] = generate_mask_tensor(test_mask)
+            g.ndata['train_mask'] = train_mask
+            g.ndata['val_mask'] = val_mask
+            g.ndata['test_mask'] = test_mask
             # node labels
             g.ndata['label'] = torch.tensor(labels)
             # node features
@@ -306,7 +301,7 @@ to see the complete code. The following code uses a subclass of ``KnowledgeGraph
     
     # get training mask
     train_mask = graph.edata['train_mask']
-    train_idx = torch.nonzero(train_mask).squeeze()
+    train_idx = torch.nonzero(train_mask, as_tuple=False).squeeze()
     src, dst = graph.edges(train_idx)
     # get edge types in training set
     rel = graph.edata['etype'][train_idx]

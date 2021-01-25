@@ -769,7 +769,7 @@ class HeteroGraphIndex(ObjectBase):
             n = self.number_of_nodes(dsttype)
             row = F.unsqueeze(dst, 0)
             col = F.unsqueeze(eid, 0)
-            idx = F.cat([row, col], dim=0)
+            idx = F.copy_to(F.cat([row, col], dim=0), ctx)
             # FIXME(minjie): data type
             dat = F.ones((m,), dtype=F.float32, ctx=ctx)
             inc, shuffle_idx = F.sparse_matrix(dat, ('coo', idx), (n, m))
@@ -777,7 +777,7 @@ class HeteroGraphIndex(ObjectBase):
             n = self.number_of_nodes(srctype)
             row = F.unsqueeze(src, 0)
             col = F.unsqueeze(eid, 0)
-            idx = F.cat([row, col], dim=0)
+            idx = F.copy_to(F.cat([row, col], dim=0), ctx)
             # FIXME(minjie): data type
             dat = F.ones((m,), dtype=F.float32, ctx=ctx)
             inc, shuffle_idx = F.sparse_matrix(dat, ('coo', idx), (n, m))
@@ -794,7 +794,7 @@ class HeteroGraphIndex(ObjectBase):
             # create index
             row = F.unsqueeze(F.cat([src, dst], dim=0), 0)
             col = F.unsqueeze(F.cat([eid, eid], dim=0), 0)
-            idx = F.cat([row, col], dim=0)
+            idx = F.copy_to(F.cat([row, col], dim=0), ctx)
             # FIXME(minjie): data type
             x = -F.ones((n_entries,), dtype=F.float32, ctx=ctx)
             y = F.ones((n_entries,), dtype=F.float32, ctx=ctx)
