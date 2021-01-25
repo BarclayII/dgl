@@ -10,7 +10,7 @@ from collections import Counter, defaultdict
 BATCH_SIZE = 128                    # batch size
 N_SAMPLE_NODES_PER_TYPE = 520       # number of nodes to sample per node type per sampler step
 N_SAMPLE_STEPS = 6                  # number of sampler steps
-N_WORKERS = 24                      # number of sampler worker processes running in parallel
+N_WORKERS = 16                      # number of sampler worker processes running in parallel
 N_EPOCHS = 10                       # number of epochs to train
 N_EVAL_PASSES = 1                   # number of evaluation passes
 N_HIDDEN = 512                      # hidden dimension size
@@ -93,8 +93,8 @@ def evaluate(dl, model):
     # node prediction across their appearances.
     model.eval()
 
-    sum_preds = torch.zeros(g.num_nodes(), n_classes)
-    counts = torch.zeros(g.num_nodes())
+    sum_preds = torch.zeros(g.num_nodes(), n_classes).cuda()
+    counts = torch.zeros(g.num_nodes()).cuda()
     for _ in range(N_EVAL_PASSES):
         with tqdm.tqdm(dl) as tq, torch.no_grad():
             for i, (sg, num_seed_nodes) in enumerate(tq):
@@ -103,19 +103,19 @@ def evaluate(dl, model):
 
                 sg = sg.to('cuda')
                 x = x.to('cuda')
-                y = model(sg, x).cpu()
-                nid = sg.ndata[dgl.NID].cpu()
+                y = model(sg, x)
+                nid = sg.ndata[dgl.NID]
 
-                ones = torch.ones(nid.shape[0])
+                ones = torch.ones(nid.shape[0]).to(y.device)
                 sum_preds.scatter_add_(0, nid[:, None].expand_as(y), y)
                 counts.scatter_add_(0, nid, ones)
     avg_preds = sum_preds / counts[:, None]
     final_preds = avg_preds.argmax(1)
 
-    all_labels = g.ndata['label']
-    all_train_mask = g.ndata['train_mask']
-    all_val_mask = g.ndata['val_mask']
-    all_test_mask = g.ndata['test_mask']
+    all_labels = g.ndata['label'].cuda()
+    all_train_mask = g.ndata['train_mask'].cuda()
+    all_val_mask = g.ndata['val_mask'].cuda()
+    all_test_mask = g.ndata['test_mask'].cuda()
     train_acc = (final_preds[all_train_mask] == all_labels[all_train_mask]).float().mean().item()
     val_acc = (final_preds[all_val_mask] == all_labels[all_val_mask]).float().mean().item()
     test_acc = (final_preds[all_test_mask] == all_labels[all_test_mask]).float().mean().item()
@@ -125,7 +125,6 @@ def evaluate(dl, model):
 
 for _ in range(N_EPOCHS):
     train(dl, model)
-    break
     _, val_acc, _ = evaluate(dl, model)
     # Save best model
     if best_val_acc < val_acc:
